@@ -12,6 +12,7 @@
 
 #include <gu_fdesc.hpp>
 #include <gu_mmap.hpp>
+#include <gu_lock.hpp>
 
 #include <string>
 #include <map>
@@ -102,6 +103,7 @@ namespace gcache
         }
 
         size_t allocated_pool_size ();
+        size_t actual_pool_size (gu::Mutex * mtx);
 
     private:
 

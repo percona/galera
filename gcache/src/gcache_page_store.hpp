@@ -13,6 +13,8 @@
 #include <string>
 #include <deque>
 
+#include <gu_lock.hpp>
+
 namespace gcache
 {
     class PageStore : public MemOps
@@ -54,6 +56,7 @@ namespace gcache
         void  set_keep_count (size_t count) { keep_page_ = count; cleanup();}
 
         size_t allocated_pool_size ();
+        size_t actual_pool_size (gu::Mutex * mtx);
 
         /* for unit tests */
         size_t count()       const { return count_;        }
@@ -62,6 +65,7 @@ namespace gcache
 
     private:
 
+        gu::Mutex         mtx_;
         std::string const base_name_; /* /.../.../gcache.page. */
         size_t            keep_size_; /* how much pages to keep after freeing*/
         size_t            page_size_; /* min size of the individual page */

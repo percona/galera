@@ -135,6 +135,7 @@ namespace galera
         void process_sync(wsrep_seqno_t seqno_l);
 
         const struct wsrep_stats_var* stats_get();
+        const struct wsrep_stats_var* stats_ext_get();
         void                          stats_reset();
         void                   stats_free(struct wsrep_stats_var*);
 
@@ -452,6 +453,7 @@ namespace galera
         };
 
         void build_stats_vars (std::vector<struct wsrep_stats_var>& stats);
+        void build_stats_ext_vars (std::vector<struct wsrep_stats_var>& stats);
 
         void establish_protocol_versions (int version);
 
@@ -618,6 +620,7 @@ namespace galera
         mutable gu::Mutex     incoming_mutex_;
 
         mutable std::vector<struct wsrep_stats_var> wsrep_stats_;
+        mutable std::vector<struct wsrep_stats_var> wsrep_stats_ext_;
     };
 
     std::ostream& operator<<(std::ostream& os, ReplicatorSMM::State state);

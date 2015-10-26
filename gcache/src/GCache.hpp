@@ -104,6 +104,11 @@ namespace gcache
          */
         size_t allocated_pool_size ();
 
+        /*!
+         * Returns actual gcache memory pool size (in bytes).
+         */
+        size_t actual_pool_size ();
+
         class Buffer
         {
         public:

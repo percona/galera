@@ -499,6 +499,17 @@ namespace gcache
         assert_sizes();
     }
 
+    size_t RingBuffer::actual_pool_size (gu::Mutex * mtx)
+    {
+       void*  ptr= reinterpret_cast<void *> (mmap_.ptr);
+       size_t used= max_used_;
+       size_t size;
+       mtx->unlock();
+       size = gu_actual_memory_usage(ptr, used);
+       mtx->lock();
+       return size;
+    }
+
     size_t RingBuffer::allocated_pool_size ()
     {
        return max_used_;

@@ -74,6 +74,14 @@ namespace gcache
                   << "\n" << "GCache frees   : " << frees;
     }
 
+    size_t GCache::actual_pool_size ()
+    {
+        gu::Lock lock(mtx);
+        return mem.actual_pool_size() +
+               rb.actual_pool_size(&mtx) +
+               ps.actual_pool_size(&mtx);
+    }
+
     size_t GCache::allocated_pool_size ()
     {
         gu::Lock lock(mtx);

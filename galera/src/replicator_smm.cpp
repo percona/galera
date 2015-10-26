@@ -199,7 +199,8 @@ galera::ReplicatorSMM::ReplicatorSMM(const struct wsrep_init_args* args)
     preordered_id_      (),
     incoming_list_      (""),
     incoming_mutex_     (),
-    wsrep_stats_        ()
+    wsrep_stats_        (),
+    wsrep_stats_ext_    ()
 {
     // @todo add guards (and perhaps actions)
     state_.add_transition(Transition(S_CLOSED,  S_DESTROYED));
@@ -271,6 +272,7 @@ galera::ReplicatorSMM::ReplicatorSMM(const struct wsrep_init_args* args)
     cert_.assign_initial_position(seqno, trx_proto_ver());
 
     build_stats_vars(wsrep_stats_);
+    build_stats_ext_vars(wsrep_stats_ext_);
 }
 
 galera::ReplicatorSMM::~ReplicatorSMM()

@@ -922,6 +922,18 @@ struct wsrep_stats_var* galera_stats_get (wsrep_t* gh)
 
 
 extern "C"
+struct wsrep_stats_var* galera_stats_ext_get (wsrep_t* gh)
+{
+    assert(gh != 0);
+    assert(gh->ctx != 0);
+
+    REPL_CLASS* repl(reinterpret_cast< REPL_CLASS * >(gh->ctx));
+
+    return const_cast<struct wsrep_stats_var*>(repl->stats_ext_get());
+}
+
+
+extern "C"
 void galera_stats_free (wsrep_t* gh, struct wsrep_stats_var* s)
 {
     assert(gh != 0);
@@ -1090,6 +1102,7 @@ static wsrep_t galera_str = {
     &galera_sst_received,
     &galera_snapshot,
     &galera_stats_get,
+    &galera_stats_ext_get,
     &galera_stats_free,
     &galera_stats_reset,
     &galera_pause,

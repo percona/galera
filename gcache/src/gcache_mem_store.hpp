@@ -139,6 +139,7 @@ namespace gcache
         size_t _allocd () const { return size_; }
 
         size_t allocated_pool_size ();
+        size_t actual_pool_size ();
 
     private:
 
