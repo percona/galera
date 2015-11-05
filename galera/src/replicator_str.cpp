@@ -29,13 +29,13 @@ ReplicatorSMM::state_transfer_required(const wsrep_view_info_t& view_info)
             {
                 if (local_seqno > group_seqno)
                 {
-                    close();
-                    gu_throw_fatal
+                    log_fatal
                         << "Local state seqno (" << local_seqno
                         << ") is greater than group seqno (" <<group_seqno
                         << "): states diverged. Aborting to avoid potential "
                         << "data loss. Remove '" << state_file_
                         << "' file and restart if you wish to continue.";
+                    abort();
                 }
 
                 return (local_seqno != group_seqno);

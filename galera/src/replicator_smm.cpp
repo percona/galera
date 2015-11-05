@@ -1839,9 +1839,11 @@ wsrep_status_t galera::ReplicatorSMM::cert(TrxHandle* trx)
             if (gu_unlikely(trx->is_toi() && applicable)) // small sanity check
             {
                 // may happen on configuration change
-                log_warn << "Certification failed for TO isolated action: "
-                         << *trx;
-                assert(0);
+                log_fatal << "Certification failed for TO isolated action: "
+                          << *trx;
+                st_.mark_unsafe();
+                local_monitor_.leave(lo);
+                abort();
             }
             local_cert_failures_ += trx->is_local();
             trx->set_state(TrxHandle::S_MUST_ABORT);
