@@ -1838,7 +1838,13 @@ wsrep_status_t galera::ReplicatorSMM::cert(TrxHandle* trx)
         case Certification::TEST_FAILED:
             if (gu_unlikely(trx->is_toi() && applicable)) // small sanity check
             {
-                // may happen on configuration change
+                // In some rare scenarios, such as PXC-436, sequence
+                // number mismatch occurs on configuration change and
+                // then certification was failed. We cannot move server
+                // forward (when local_seqno > group_seqno) to avoid
+                // potential data loss, and hence will have to shut it
+                // down. Before shutting it down,we need to mark state
+                // as unsafe – to trigger SST at next server restart:
                 log_fatal << "Certification failed for TO isolated action: "
                           << *trx;
                 st_.mark_unsafe();

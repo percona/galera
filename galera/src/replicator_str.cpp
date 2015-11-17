@@ -29,6 +29,12 @@ ReplicatorSMM::state_transfer_required(const wsrep_view_info_t& view_info)
             {
                 if (local_seqno > group_seqno)
                 {
+                    // Local state sequence number is greater than group
+                    // sequence number: states diverged on SST. We cannot
+                    // move server forward (when local_seqno > group_seqno)
+                    // to avoid potential data loss, and hence will have
+                    // to shut it down. User must to remove state file and
+                    // then restart server, if he/she wish to continue:
                     log_fatal
                         << "Local state seqno (" << local_seqno
                         << ") is greater than group seqno (" <<group_seqno
