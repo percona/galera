@@ -686,9 +686,27 @@ ReplicatorSMM::request_state_transfer (void* recv_ctx,
 
     StateRequest* const req(prepare_state_request(sst_req, sst_req_len,
                                                   group_uuid, group_seqno));
+
+    bool trivial = sst_is_trivial(sst_req, sst_req_len);
+
     gu::Lock lock(sst_mutex_);
 
-    st_.mark_unsafe();
+    // We must mark the state as the "unsafe" before SST because
+    // the current state may be changed during execution of the SST
+    // and it will no longer match the stored seqno (state becomes
+    // "unsafe" after the first modification of data during the SST,
+    // but unfortunately, we do not have callback or wsrep API to
+    // notify about the first data modification). On the other hand,
+    // in cases where the full SST is not required and we want to
+    // use IST, we need to save the current state - to prevent
+    // unnecessary SST after node restart (if IST will be failed).
+    // Therefore, we need to check whether the full state transfer
+    // (SST) is required or not, before marking state as unsafe:
+
+    if (sst_req_len != 0 && !trivial)
+    {
+        st_.mark_unsafe();
+    }
 
     send_state_request (req);
 
@@ -701,7 +719,7 @@ ReplicatorSMM::request_state_transfer (void* recv_ctx,
     if (sst_req_len != 0)
     {
 
-        if (sst_is_trivial(sst_req, sst_req_len))
+        if (trivial)
         {
             sst_uuid_  = group_uuid;
             sst_seqno_ = group_seqno;
