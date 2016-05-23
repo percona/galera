@@ -9,10 +9,10 @@ build:
 	scons $(MAKE_JFLAG) revno=$(GALERA_REVNO) garb/garbd libgalera_smm.so $(SCONS_ARGS)
 
 override_dh_strip:
-	dh_strip -ppercona-xtradb-cluster-galera-3.x --dbg-package=percona-xtradb-cluster-galera-3.x-dbg
-	dh_strip -ppercona-xtradb-cluster-garbd-3.x --dbg-package=percona-xtradb-cluster-garbd-3.x-dbg
+	dh_strip -pgalera-57 --dbg-package=galera-57-dbg
+	dh_strip -pgalera-garbd-57 --dbg-package=galera-garbd-57-dbg
 
 override_dh_installinit:
-	dh_installinit -ppercona-xtradb-cluster-garbd-3.x  --name=garbd
+	dh_installinit -pgalera-garbd-57  --name=galera-garbd-57
 
 .PHONY: override_dh_strip override_dh_installinit
