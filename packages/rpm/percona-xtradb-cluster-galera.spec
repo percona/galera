@@ -73,7 +73,7 @@ Prefix: %{_prefix}
 
 Name:		@@PKGNAME@@
 Version:	%{galera_version}
-Release:	%{pxcg_revision}%{?dist}
+Release:	%{pxcg_revision}.%{?dist}
 Summary:	Galera libraries of Percona XtraDB Cluster
 Group:		Applications/Databases
 License:	GPLv3
@@ -219,6 +219,9 @@ rm -rf $RPM_BUILD_ROOT
 %endif
 
 %changelog
+* Tue May 24 2016 Evgeniy Patlan <evgeniy.patlan@percona.com>
+- fix release parameter(added point between version and distribution)
+
 * Mon May 23 2016 Evgeniy Patlan <evgeniy.patlan@percona.com>
 - rename packages
 - fix src rpm name
