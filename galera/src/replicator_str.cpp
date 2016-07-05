@@ -413,12 +413,44 @@ void ReplicatorSMM::process_state_req(void*       recv_ctx,
 
                 try
                 {
+#ifdef GU_DBUG_ON
+                    bool failure= false;
+#endif
                     gcache_.seqno_lock(istr.last_applied() + 1);
+#ifdef GU_DBUG_ON
+                    // We can use Galera debugging facility to simulate
+                    // unexpected shift of the donor seqno:
+
+                    GU_DBUG_EXECUTE("process_state_req_ist", failure=true;);
+                    if (failure)
+                    {
+                        throw gu::NotFound();
+                    }
+#endif
                 }
                 catch(gu::NotFound& nf)
                 {
                     log_info << "IST first seqno " << istr.last_applied() + 1
                              << " not found from cache, falling back to SST";
+
+                    // When new node joining the cluster, it trying to avoid
+                    // unnecessary SST request. However, the heuristic algorithm
+                    // that selects the donor node does not give us a 100%
+                    // guarantee that seqno will not move forward while new
+                    // node joining the cluster. Therefore, if seqno had gone
+                    // forward, and if we have only the IST request (but we
+                    // do not have the SST request), then we need to informing
+                    // new node, that it should prepare to receive SST:
+
+                    if (streq->sst_len() == 0)
+                    {
+                        log_info << "IST canceled because the donor seqno had "
+                                    "gone forward but SST was not prepared "
+                                    "by the joiner node.";
+                        rcode = -ENODATA;
+                        goto out;
+                    }
+
                     // @todo: close IST channel explicitly
                     goto full_sst;
                 }
@@ -621,7 +653,27 @@ ReplicatorSMM::send_state_request (const StateRequest* const req, const bool uns
                                           ist_uuid, ist_seqno, &seqno_l);
         if (ret < 0)
         {
-            if (!retry_str(ret))
+            if (ret == -ENODATA)
+            {
+                // Although the current state has lagged behind state
+                // of the group, we can save it for the next attempt,
+                // because we do not know how will finish their work
+                // other nodes:
+
+                if (unsafe)
+                {
+                   st_.mark_safe();
+                }
+
+                log_fatal << "State transfer request failed unrecoverably, "
+                             "because the donor seqno had gone forward "
+                             "during IST, but SST request was not prepared "
+                             "from our side due to selected state transfer "
+                             "method, which do not supports SST during "
+                             "node operation. Restart required.";
+                abort();
+            }
+            else if (!retry_str(ret))
             {
                 log_error << "Requesting state transfer failed: "
                           << ret << "(" << strerror(-ret) << ")";
@@ -677,7 +729,7 @@ ReplicatorSMM::send_state_request (const StateRequest* const req, const bool uns
 
         st_.set(state_uuid_, STATE_SEQNO());
 
-        if (state_() > S_CLOSING)
+        if (ret != -ENODATA && state_() > S_CLOSING)
         {
             if (!unsafe)
             {
@@ -703,7 +755,7 @@ ReplicatorSMM::send_state_request (const StateRequest* const req, const bool uns
 }
 
 
-void
+long
 ReplicatorSMM::request_state_transfer (void* recv_ctx,
                                        const wsrep_uuid_t& group_uuid,
                                        wsrep_seqno_t const group_seqno,
@@ -747,10 +799,18 @@ ReplicatorSMM::request_state_transfer (void* recv_ctx,
     // We should not wait for completion of the SST or to handle it
     // results if an error has occurred when sending the request:
 
-    if (send_state_request(req, unsafe) < 0)
+    long ret = send_state_request(req, unsafe);
+    if (ret < 0)
     {
+        // If the state transfer request failed, then
+        // we need to close the IST receiver:
+        if (ist_prepared_)
+        {
+           ist_prepared_ = false;
+           (void)ist_receiver_.finished();
+        }
         delete req;
-        return;
+        return ret;
     }
 
     GU_DBUG_SYNC_WAIT("after_send_state_request");
@@ -783,7 +843,7 @@ ReplicatorSMM::request_state_transfer (void* recv_ctx,
             }
 
             close();
-            return;
+            return -ECANCELED;
         }
         else if (sst_uuid_ != group_uuid)
         {
@@ -845,8 +905,8 @@ ReplicatorSMM::request_state_transfer (void* recv_ctx,
             ist_receiver_.ready();
             recv_IST(recv_ctx);
 
-            // IST process could already be interrupted if Galera
-            // is in the process of shutting down:
+            // We must to close the IST receiver if the node
+            // is not in the process of shutdown:
             if (ist_prepared_)
             {
                 ist_prepared_ = false;
@@ -861,8 +921,8 @@ ReplicatorSMM::request_state_transfer (void* recv_ctx,
         }
         else
         {
-            // IST process could already be interrupted if Galera
-            // is in the process of shutting down:
+            // We must to close the IST receiver if the node
+            // is not in the process of shutdown:
             if (ist_prepared_)
             {
                 ist_prepared_ = false;
@@ -885,6 +945,7 @@ ReplicatorSMM::request_state_transfer (void* recv_ctx,
     }
 
     delete req;
+    return 0;
 }
 
 

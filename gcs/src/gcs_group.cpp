@@ -747,6 +747,17 @@ gcs_group_handle_join_msg  (gcs_group_t* group, const gcs_recv_msg_t* msg)
 
             if (from_donor && peer_idx == group->my_idx &&
                 GCS_NODE_STATE_JOINER == group->nodes[peer_idx].status) {
+
+                // If there is an error code ENODATA, it is indication
+                // that state of the joiner node was diverged too much
+                // and we need to move from IST to SST. We should not
+                // treat this as a fatal error:
+
+                if (seqno == -ENODATA)
+                {
+                    return 0;
+                }
+
                 // this node will be waiting for SST forever. If it has only
                 // one recv thread there is no (generic) way to wake it up.
                 gu_fatal ("Will never receive state. Need to abort.");
@@ -1171,15 +1182,23 @@ group_find_ist_donor (const gcs_group_t* const group,
         return -1;
     }
 
+    // The safety_gap is heuristically calculated difference
+    // to which the group seqno can be displaced in the process
+    // of sending a request for the IST. We should use the
+    // ist_seqno - safety_gap (instead of ist_seqno) during
+    // the search of the donor node, to avoid situations when
+    // seqno on the donor node has changed so much that IST
+    // is not possible (and we need to run SST):
+
     if (str_len) {
         // find ist donor by name.
         idx = group_find_ist_donor_by_name_in_string(
-            group, joiner_idx, str, str_len, ist_seqno, status);
+            group, joiner_idx, str, str_len, ist_seqno - safety_gap, status);
         if (idx >= 0) return idx;
     }
     // find ist donor by status.
     idx = group_find_ist_donor_by_state(
-        group, joiner_idx, ist_seqno, status);
+        group, joiner_idx, ist_seqno - safety_gap, status);
     if (idx >= 0) return idx;
     return -1;
 }
