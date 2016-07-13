@@ -1111,7 +1111,7 @@ ssize_t gcs_core_recv (gcs_core_t*          conn,
         case GCS_MSG_FLOW:
             ret = core_msg_to_action (conn, recv_msg, &recv_act->act);
             assert (ret == recv_act->act.buf_len || ret <= 0);
-            if (ret <= 0) {
+            if (ret == -1) {
                 /* This is to flag transition of node from JOINED -> DONOR.
                 Generally node goes from DONOR -> JOINED -> SYNCED but if
                 parallel desync request is recieved while node is in JOINED
