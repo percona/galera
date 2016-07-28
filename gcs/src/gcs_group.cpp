@@ -747,6 +747,19 @@ gcs_group_handle_join_msg  (gcs_group_t* group, const gcs_recv_msg_t* msg)
 
             if (from_donor && peer_idx == group->my_idx &&
                 GCS_NODE_STATE_JOINER == group->nodes[peer_idx].status) {
+
+                // If there is an ENODATA error code, then it is indication
+                // that state on the joiner node was moved forward too much
+                // and we need to initiate a full SST instead of IST.
+                // We should not treat this condition as a fatal error
+                // (decision on this matter should take higher levels,
+                // for example, Replicator or the server):
+
+                if (seqno == -ENODATA)
+                {
+                    return -ENODATA;
+                }
+
                 // this node will be waiting for SST forever. If it has only
                 // one recv thread there is no (generic) way to wake it up.
                 gu_fatal ("Will never receive state. Need to abort.");
@@ -1171,15 +1184,23 @@ group_find_ist_donor (const gcs_group_t* const group,
         return -1;
     }
 
+    // The safety_gap is the heuristically calculated distance
+    // to which the group seqno can be moved forward in process
+    // of the delivery the IST request to the donor node. We should
+    // use difference "ist_seqno - safety_gap" (instead of ist_seqno)
+    // to search of the donor node - to avoid situations where seqno
+    // on the donor node changed so much that IST is not possible
+    // (and we need to run full SST instead):
+
     if (str_len) {
         // find ist donor by name.
         idx = group_find_ist_donor_by_name_in_string(
-            group, joiner_idx, str, str_len, ist_seqno, status);
+            group, joiner_idx, str, str_len, ist_seqno - safety_gap, status);
         if (idx >= 0) return idx;
     }
     // find ist donor by status.
     idx = group_find_ist_donor_by_state(
-        group, joiner_idx, ist_seqno, status);
+        group, joiner_idx, ist_seqno - safety_gap, status);
     if (idx >= 0) return idx;
     return -1;
 }
