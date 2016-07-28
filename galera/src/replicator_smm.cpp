@@ -1469,9 +1469,29 @@ galera::ReplicatorSMM::process_conf_change(void*                    recv_ctx,
         if (st_required && app_wants_st)
         {
             // GCache::Seqno_reset() happens here
-            request_state_transfer (recv_ctx,
-                                    group_uuid, group_seqno, app_req,
-                                    app_req_len);
+            long ret =
+                request_state_transfer (recv_ctx,
+                                        group_uuid, group_seqno, app_req,
+                                        app_req_len);
+
+            if (ret < 0 || sst_state_ == SST_CANCELED)
+            {
+                // If the IST/SST request was canceled due to error
+                // at the GCS level or if request was canceled by another
+                // thread (by initiative of the server), and if the node
+                // remain in the S_JOINING state, then we must return it
+                // to the S_CONNECTED state (to the original state, which
+                // exist before the request_state_transfer started).
+                // In other words, if state transfer failed then we move
+                // the node back to the old state. This will help us to
+                // restart SST, especially if mysqldump method is used
+                // for state transfer:
+
+                if (state_() == S_JOINING)
+                {
+                    state_.shift_to(S_CONNECTED);
+                }
+            }
         }
         else
         {
@@ -1512,8 +1532,13 @@ galera::ReplicatorSMM::process_conf_change(void*                    recv_ctx,
             st_.set(state_uuid_, WSREP_SEQNO_UNDEFINED);
         }
 
-        if (state_() == S_JOINING && sst_state_ != SST_NONE
-                                  && sst_state_ != SST_CANCELED)
+        // We should not try to joining the cluster at the GCS level,
+        // if the node is not in the S_JOINING state, or if we did not
+        // make the IST/SST request, or if it is failed. In other words,
+        // any state (SST_NONE, SST_CANCELED) other than SST_WAIT not
+        // require us to sending the JOIN message at the GCS level:
+
+        if (sst_state_ == SST_WAIT && state_() == S_JOINING)
         {
             /* There are two reasons we can be here:
              * 1) we just got state transfer in request_state_transfer() above;
