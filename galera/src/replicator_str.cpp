@@ -703,7 +703,7 @@ ReplicatorSMM::send_state_request (const StateRequest* const req, const bool uns
 }
 
 
-void
+long
 ReplicatorSMM::request_state_transfer (void* recv_ctx,
                                        const wsrep_uuid_t& group_uuid,
                                        wsrep_seqno_t const group_seqno,
@@ -747,10 +747,18 @@ ReplicatorSMM::request_state_transfer (void* recv_ctx,
     // We should not wait for completion of the SST or to handle it
     // results if an error has occurred when sending the request:
 
-    if (send_state_request(req, unsafe) < 0)
+    long ret = send_state_request(req, unsafe);
+    if (ret < 0)
     {
+        // If the state transfer request failed, then
+        // we need to close the IST receiver:
+        if (ist_prepared_)
+        {
+            ist_prepared_ = false;
+            (void)ist_receiver_.finished();
+        }
         delete req;
-        return;
+        return ret;
     }
 
     GU_DBUG_SYNC_WAIT("after_send_state_request");
@@ -783,7 +791,9 @@ ReplicatorSMM::request_state_transfer (void* recv_ctx,
             }
 
             close();
-            return;
+
+            delete req;
+            return -ECANCELED;
         }
         else if (sst_uuid_ != group_uuid)
         {
@@ -845,7 +855,7 @@ ReplicatorSMM::request_state_transfer (void* recv_ctx,
             ist_receiver_.ready();
             recv_IST(recv_ctx);
 
-            // IST process could already be interrupted if Galera
+            // We must close the IST receiver if the node
             // is in the process of shutting down:
             if (ist_prepared_)
             {
@@ -861,7 +871,7 @@ ReplicatorSMM::request_state_transfer (void* recv_ctx,
         }
         else
         {
-            // IST process could already be interrupted if Galera
+            // We must close the IST receiver if the node
             // is in the process of shutting down:
             if (ist_prepared_)
             {
@@ -885,6 +895,7 @@ ReplicatorSMM::request_state_transfer (void* recv_ctx,
     }
 
     delete req;
+    return 0;
 }
 
 
