@@ -432,6 +432,13 @@ gcs_group_handle_comp_msg (gcs_group_t* group, const gcs_comp_msg_t* comp)
         gu_info ("Received self-leave message.");
         assert (0 == new_nodes_num);
         assert (!prim_comp);
+        /* Reset node desynchronization counter and the saved state
+           when node was disconnected from the cluster: */
+        if (group->my_idx >= 0 && group->nodes[group->my_idx].desync_count)
+        {
+            group->prim_state = GCS_NODE_STATE_JOINED;
+            group->nodes[group->my_idx].desync_count = 0;
+        }
     }
 
     if (prim_comp) {
