@@ -870,11 +870,11 @@ ReplicatorSMM::request_state_transfer (void* recv_ctx,
             }
         }
     }
-    else
+
+    // We should mark the position as undefined
+    // (if position is not marked as undefined before),
+    // to prevent data loss if the server crashes.
     {
-        // We should mark the position as undefined
-        // (if position is not marked as undefined before),
-        // to prevent data loss if the server crashes.
         wsrep_uuid_t  uuid;
         wsrep_seqno_t seqno;
         st_.get (uuid, seqno);
@@ -943,19 +943,6 @@ void ReplicatorSMM::recv_IST(void* recv_ctx)
             }
             else
             {
-                // If the current position is defined, then we need
-                // to change it to an undefined position, to prevent
-                // data loss if the server crashes:
-                if (first)
-                {
-                    wsrep_uuid_t  uuid;
-                    wsrep_seqno_t seqno;
-                    st_.get (uuid, seqno);
-                    if (seqno != WSREP_SEQNO_UNDEFINED)
-                    {
-                       st_.set (uuid, WSREP_SEQNO_UNDEFINED);
-                    }
-                }
                 return;
             }
             trx->unref();
