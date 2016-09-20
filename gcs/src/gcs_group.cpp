@@ -430,6 +430,13 @@ gcs_group_handle_comp_msg (gcs_group_t* group, const gcs_comp_msg_t* comp)
         gu_info ("Received self-leave message.");
         assert (0 == new_nodes_num);
         assert (!prim_comp);
+        /* Reset node desynchronization counter and the saved state
+           when node was disconnected from the cluster: */
+        if (group->my_idx >= 0 && group->nodes[group->my_idx].desync_count)
+        {
+            group->prim_state = GCS_NODE_STATE_JOINED;
+            group->nodes[group->my_idx].desync_count = 0;
+        }
     }
 
     if (prim_comp) {
@@ -814,6 +821,29 @@ gcs_group_handle_sync_msg  (gcs_group_t* group, const gcs_recv_msg_t* msg)
         sender->count_last_applied = true;
 
         group_redo_last_applied (group);//from now on this node must be counted
+
+        /* If before going into a NON-PRIMARY state node was
+           in the DESYNCED state, then we need to return it back
+           into this state after the IST: */
+
+        if (sender_idx == group->my_idx &&
+            group->prim_state == GCS_NODE_STATE_DONOR)
+        {
+            sender->status = GCS_NODE_STATE_DONOR;
+            sender->desync_count = sender->desync_saved;
+
+            memcpy (sender->donor, sender->id,  GCS_COMP_MEMB_ID_MAX_LEN+1);
+
+            gu_info ("Desynced member %d.%d (%s) re-joined with group.",
+                     sender_idx, sender->segment, sender->name);
+
+            /* When state restored, we need to prevent re-entry
+               in this branch: */
+
+            group->prim_state = GCS_NODE_STATE_JOINER;
+
+            return 1;
+        }
 
         gu_info ("Member %d.%d (%s) synced with group.",
                  sender_idx, sender->segment, sender->name);
@@ -1573,4 +1603,17 @@ gcs_group_get_status (gcs_group_t* group, gu::Status& status)
     }
 
     status.insert("desync_count", gu::to_string(desync_count));
+}
+
+gcs_node_state_t
+gcs_group_get_node_state(gcs_group_t* group)
+{
+    if (gu_likely(group->my_idx >= 0))
+    {
+        return group->nodes[group->my_idx].status;
+    }
+    else
+    {
+        return GCS_NODE_STATE_NON_PRIM;
+    }
 }

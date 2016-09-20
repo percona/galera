@@ -1399,6 +1399,19 @@ void gcs_core_get_status(gcs_core_t* core, gu::Status& status)
     gu_mutex_unlock(&core->send_lock);
 }
 
+gcs_node_state_t gcs_core_get_state(gcs_core_t* core)
+{
+    gcs_node_state_t state = GCS_NODE_STATE_NON_PRIM;
+    if (gu_mutex_lock(&core->send_lock))
+        gu_throw_fatal << "could not lock mutex";
+    if (core->state < CORE_CLOSED)
+    {
+        state = gcs_group_get_node_state(&core->group);
+    }
+    gu_mutex_unlock(&core->send_lock);
+    return state;
+}
+
 #ifdef GCS_CORE_TESTING
 
 gcs_backend_t*

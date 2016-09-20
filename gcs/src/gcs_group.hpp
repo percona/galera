@@ -250,4 +250,7 @@ gcs_group_find_donor(const gcs_group_t* group,
 extern void
 gcs_group_get_status(gcs_group_t* group, gu::Status& status);
 
+extern gcs_node_state_t
+gcs_group_get_node_state(gcs_group_t* group);
+
 #endif /* _gcs_group_h_ */

@@ -1026,7 +1026,14 @@ gcs_handle_actions (gcs_conn_t*          conn,
         break;
     case GCS_ACT_SYNC:
         ret = gcs_handle_state_change (conn, &rcvd->act);
-        gcs_become_synced (conn);
+        if (gcs_core_get_state (conn->core) != GCS_NODE_STATE_DONOR)
+        {
+            gcs_become_synced (conn);
+        }
+        else
+        {
+            gcs_become_donor (conn);
+        }
         break;
     default:
         break;

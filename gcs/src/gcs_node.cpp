@@ -159,6 +159,8 @@ gcs_node_update_status (gcs_node_t* node, const gcs_state_quorum_t* quorum)
                              node_act_id, quorum->act_id);
                 }
                 node->status = GCS_NODE_STATE_PRIM;
+                node->desync_saved = node->desync_count;
+                node->desync_count = 0;
             }
         }
         else {
