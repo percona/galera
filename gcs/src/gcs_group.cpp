@@ -741,6 +741,25 @@ gcs_group_handle_join_msg  (gcs_group_t* group, const gcs_recv_msg_t* msg)
 
             if (from_donor && peer_idx == group->my_idx &&
                 GCS_NODE_STATE_JOINER == group->nodes[peer_idx].status) {
+
+                // If there is an ENODATA error code, then it is indication
+                // that state on the joiner node was moved forward too much
+                // and we need to initiate a full SST instead of IST.
+                // We should not treat this condition as a fatal error
+                // (decision on this matter should take higher levels,
+                // for example, Replicator or the server):
+
+                if (seqno == -ENODATA)
+                {
+                    gu_fatal ("State transfer request failed unrecoverably "
+                              "because the donor seqno had gone forward "
+                              "during IST, but SST request was not prepared "
+                              "from our side due to selected state transfer "
+                              "method (which do not supports SST during "
+                              "node operation). Restart required.");
+                    return -ENOTRECOVERABLE;
+                }
+
                 // this node will be waiting for SST forever. If it has only
                 // one recv thread there is no (generic) way to wake it up.
                 gu_fatal ("Will never receive state. Need to abort.");
@@ -1144,7 +1163,8 @@ group_find_ist_donor (const gcs_group_t* const group,
                       int joiner_idx,
                       const char* str, int str_len,
                       gcs_seqno_t ist_seqno,
-                      gcs_node_state_t status)
+                      gcs_node_state_t status,
+                      const bool ist_only)
 {
     int idx = -1;
 
@@ -1165,7 +1185,10 @@ group_find_ist_donor (const gcs_group_t* const group,
              (long long)ist_seqno, (long long)lowest_cached_seqno,
              (long long)conf_seqno, (long long)safe_ist_seqno);
 
-    if (ist_seqno < safe_ist_seqno) {
+    // We should ignore this heuristic if the request contains only a IST part,
+    // since otherwise we cannot fulfill the request:
+
+    if (ist_seqno < safe_ist_seqno && ! ist_only) {
         // unsafe to perform ist.
         gu_debug("fallback to sst. ist_seqno < safe_ist_seqno");
         return -1;
@@ -1189,7 +1212,8 @@ gcs_group_find_donor(const gcs_group_t* group,
                      int const str_version,
                      int const joiner_idx,
                      const char* const donor_string, int const donor_len,
-                     const gu_uuid_t* ist_uuid, gcs_seqno_t ist_seqno)
+                     const gu_uuid_t* ist_uuid, gcs_seqno_t ist_seqno,
+                     const bool ist_only)
 {
     static gcs_node_state_t const min_donor_state = GCS_NODE_STATE_SYNCED;
 
@@ -1205,7 +1229,8 @@ gcs_group_find_donor(const gcs_group_t* group,
                                          joiner_idx,
                                          donor_string, donor_len,
                                          ist_seqno,
-                                         min_donor_state);
+                                         min_donor_state,
+                                         ist_only);
     }
     if (donor_idx < 0)
     {
@@ -1235,7 +1260,8 @@ group_select_donor (gcs_group_t* group,
                     int const joiner_idx,
                     const char* const donor_string,
                     const gu_uuid_t* ist_uuid, gcs_seqno_t ist_seqno,
-                    bool const desync)
+                    const bool desync,
+                    const bool ist_only)
 {
     static gcs_node_state_t const min_donor_state = GCS_NODE_STATE_SYNCED;
     int  donor_idx;
@@ -1261,7 +1287,8 @@ group_select_donor (gcs_group_t* group,
                                          str_version,
                                          joiner_idx,
                                          donor_string, donor_len,
-                                         ist_uuid, ist_seqno);
+                                         ist_uuid, ist_seqno,
+                                         ist_only);
     }
 
     if (donor_idx >= 0) {
@@ -1391,10 +1418,54 @@ gcs_group_handle_state_request (gcs_group_t*         group,
         }
     }
 
+    // We need to perform a partial analysis of the application
+    // request to find out that it contains the SST part (not just IST):
+
+    int app_req_len = act->act.buf_len - (donor_name_len + 1);
+    char * app_req =
+        reinterpret_cast<char*>(const_cast<void*>(act->act.buf)) +
+        (donor_name_len + 1);
+
+    // Requests of the "zero" version contain only the SST part.
+    // They can be distinguished from the first version of the requests
+    // by the lack of the "magic" prefix:
+
+    int sst_len = app_req_len;
+    int magic_len = strlen("STRv1");
+
+    if (app_req_len > magic_len && !strncmp(app_req, "STRv1", magic_len))
+    {
+        // Request of the first version contain an explicit length
+        // of the SST part:
+
+        int offset = magic_len + 1;
+        sst_len = gtohl(*(reinterpret_cast<uint32_t*>(app_req + offset)));
+
+        // To facilitate debugging, we may need involuntary stimulation
+        // of the lack of SST part in the request:
+
+#ifdef GU_DBUG_ON
+        GU_DBUG_EXECUTE("simulate_ist_only_request", {
+           *(reinterpret_cast<uint32_t*>(app_req + offset)) = 0;
+           act->act.buf_len -= sst_len;
+           memmove(app_req     + offset + sizeof(uint32_t),
+                   app_req     + offset + sizeof(uint32_t) + sst_len,
+                   app_req_len - offset - sizeof(uint32_t) - sst_len);
+           sst_len = 0;
+        });
+#endif
+    }
+
+    bool ist_only = true;
+    if (sst_len)
+    {
+        ist_only = false;
+    }
+
     donor_idx = group_select_donor(group,
                                    str_version,
                                    joiner_idx, donor_name,
-                                   &ist_uuid, ist_seqno, desync);
+                                   &ist_uuid, ist_seqno, desync, ist_only);
 
     assert (donor_idx != joiner_idx || desync  || donor_idx < 0);
     assert (donor_idx == joiner_idx || !desync || donor_idx < 0);
