@@ -128,7 +128,8 @@ std::ostream& galera::operator<<(std::ostream& os, ReplicatorSMM::State state)
 
 galera::ReplicatorSMM::ReplicatorSMM(const struct wsrep_init_args* args)
     :
-    init_lib_           (reinterpret_cast<gu_log_cb_t>(args->logger_cb)),
+    init_lib_           (reinterpret_cast<gu_log_cb_t>(args->logger_cb),
+                         reinterpret_cast<gu_pfs_instr_cb_t>(args->pfs_instr_cb)),
     config_             (),
     init_config_        (config_, args->node_address, args->data_dir),
     parse_options_      (*this, config_, args->options),
@@ -161,8 +162,13 @@ galera::ReplicatorSMM::ReplicatorSMM(const struct wsrep_init_args* args)
     sst_donor_          (),
     sst_uuid_           (WSREP_UUID_UNDEFINED),
     sst_seqno_          (WSREP_SEQNO_UNDEFINED),
+#ifdef HAVE_PSI_INTERFACE
+    sst_mutex_          (WSREP_PFS_INSTR_TAG_SST_MUTEX),
+    sst_cond_           (WSREP_PFS_INSTR_TAG_SST_CONDVAR),
+#else
     sst_mutex_          (),
     sst_cond_           (),
+#endif /* HAVE_PSI_INTERFACE */
     sst_retry_sec_      (1),
     gcache_             (config_, config_.get(BASE_DIR)),
     gcs_                (config_, gcache_, proto_max_, args->proto_ver,
@@ -176,9 +182,18 @@ galera::ReplicatorSMM::ReplicatorSMM(const struct wsrep_init_args* args)
     ist_senders_        (gcs_, gcache_),
     wsdb_               (),
     cert_               (config_, service_thd_),
+#ifdef HAVE_PSI_INTERFACE
+    local_monitor_      (WSREP_PFS_INSTR_TAG_LOCAL_MONITOR_MUTEX,
+                         WSREP_PFS_INSTR_TAG_LOCAL_MONITOR_CONDVAR),
+    apply_monitor_      (WSREP_PFS_INSTR_TAG_APPLY_MONITOR_MUTEX,
+                         WSREP_PFS_INSTR_TAG_APPLY_MONITOR_CONDVAR),
+    commit_monitor_     (WSREP_PFS_INSTR_TAG_COMMIT_MONITOR_MUTEX,
+                         WSREP_PFS_INSTR_TAG_COMMIT_MONITOR_CONDVAR),
+#else
     local_monitor_      (),
     apply_monitor_      (),
     commit_monitor_     (),
+#endif /* HAVE_PSI_INTERFACE */
     causal_read_timeout_(config_.get(Param::causal_read_timeout)),
     receivers_          (),
     replicated_         (),
@@ -194,7 +209,11 @@ galera::ReplicatorSMM::ReplicatorSMM(const struct wsrep_init_args* args)
     causal_reads_       (),
     preordered_id_      (),
     incoming_list_      (""),
+#ifdef HAVE_PSI_INTERFACE
+    incoming_mutex_     (WSREP_PFS_INSTR_TAG_INCOMING_MUTEX),
+#else
     incoming_mutex_     (),
+#endif /* HAVE_PSI_INTERFACE */
     wsrep_stats_        ()
 {
     // @todo add guards (and perhaps actions)
