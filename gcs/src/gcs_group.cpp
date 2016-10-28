@@ -741,7 +741,7 @@ gcs_group_handle_join_msg  (gcs_group_t* group, const gcs_recv_msg_t* msg)
 
             if (from_donor && peer_idx == group->my_idx &&
                 GCS_NODE_STATE_JOINER == group->nodes[peer_idx].status) {
-  
+
                 // If there is an ENODATA error code, then it is indication
                 // that state on the donor node was moved forward too much
                 // and we need to initiate a full SST instead of IST.
