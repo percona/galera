@@ -487,6 +487,12 @@ namespace galera
         /* local state seqno for internal use (macro mock up) */
         wsrep_seqno_t STATE_SEQNO(void) { return apply_monitor_.last_left(); }
 
+        /* Desynchronization control functions: */
+
+        void desync_wait ();
+        void desync_on ();
+        void desync_off ();
+
         class InitLib /* Library initialization routines */
         {
         public:
@@ -559,6 +565,17 @@ namespace galera
         wsrep_sst_donate_cb_t sst_donate_cb_;
         wsrep_synced_cb_t     synced_cb_;
         wsrep_abort_cb_t      abort_cb_;
+
+        // Desynchronization control variables:
+        int       desync_; // 0 = synched,
+                           // 1 = desynched,
+                           // 2 = wait for resync.
+        gu::Mutex desync_mutex_;
+        gu::Cond  desync_cond_;
+
+        // Desynchronization-related state transition actions:
+        StateAction desync_act_on_;
+        StateAction desync_act_off_;
 
         // SST
         std::string   sst_donor_;

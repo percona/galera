@@ -159,6 +159,11 @@ galera::ReplicatorSMM::ReplicatorSMM(const struct wsrep_init_args* args)
     sst_donate_cb_      (args->sst_donate_cb),
     synced_cb_          (args->synced_cb),
     abort_cb_           (args->abort_cb),
+    desync_             (0),
+    desync_mutex_       (),
+    desync_cond_        (),
+    desync_act_on_      (this, &ReplicatorSMM::desync_on),
+    desync_act_off_     (this, &ReplicatorSMM::desync_off),
     sst_donor_          (),
     sst_uuid_           (WSREP_UUID_UNDEFINED),
     sst_seqno_          (WSREP_SEQNO_UNDEFINED),
@@ -222,6 +227,8 @@ galera::ReplicatorSMM::ReplicatorSMM(const struct wsrep_init_args* args)
     state_.add_transition(Transition(S_CONNECTED, S_DONOR));
     state_.add_transition(Transition(S_CONNECTED, S_SYNCED));
 
+    state_.add_post_action(Transition(S_CONNECTED, S_DONOR), desync_act_on_);
+
     state_.add_transition(Transition(S_JOINING, S_CLOSING));
     // the following is possible if one non-prim conf follows another
     state_.add_transition(Transition(S_JOINING, S_CONNECTED));
@@ -236,9 +243,15 @@ galera::ReplicatorSMM::ReplicatorSMM(const struct wsrep_init_args* args)
     state_.add_transition(Transition(S_SYNCED, S_CONNECTED));
     state_.add_transition(Transition(S_SYNCED, S_DONOR));
 
+    state_.add_post_action(Transition(S_SYNCED, S_DONOR), desync_act_on_);
+
     state_.add_transition(Transition(S_DONOR, S_CLOSING));
     state_.add_transition(Transition(S_DONOR, S_CONNECTED));
     state_.add_transition(Transition(S_DONOR, S_JOINED));
+
+    state_.add_post_action(Transition(S_DONOR, S_CLOSING),   desync_act_off_);
+    state_.add_post_action(Transition(S_DONOR, S_CONNECTED), desync_act_off_);
+    state_.add_post_action(Transition(S_DONOR, S_JOINED),    desync_act_off_);
 
     local_monitor_.set_initial_position(0);
 
@@ -1687,9 +1700,75 @@ void galera::ReplicatorSMM::resume()
     log_info << "Provider resumed.";
 }
 
+/* Waiting for completion of desynchronization, */
+/* which caused by the SST: */
+
+void galera::ReplicatorSMM::desync_wait()
+{
+    gu::Lock lock(desync_mutex_);
+
+    int desync_prev = desync_;
+    desync_ = desync_prev + 1;
+
+    // We need to make sure that we are not in the
+    // desynchronization mode (which caused by the SST):
+    if (gu_unlikely(desync_prev))
+    {
+        // Otherwise, waiting for completion of previous
+        // desynchronization:
+        lock.wait(desync_cond_);
+    }
+}
+ 
+/* Entrance into desynchronization mode initiated */
+/* by an external event, such as the SST: */
+
+void galera::ReplicatorSMM::desync_on()
+{
+    desync_mutex_.lock();
+    if (desync_ == 0)
+    {
+        desync_ = 1;
+    }
+    desync_mutex_.unlock();
+}
+
+/* Signalling about completion of desynchronization: */
+
+void galera::ReplicatorSMM::desync_off()
+{
+    desync_mutex_.lock();
+
+    // Decrease the counter by one with keeping
+    // of its previous value:
+
+    int desync_prev = desync_;
+    if (desync_prev)
+    {
+        desync_ = desync_prev - 1;
+    }
+    desync_mutex_.unlock();
+
+    // If the counter is greater than one, it means that
+    // someone else is waiting for the completion of
+    // desynchronization:
+
+    if (desync_prev > 1)
+    {
+        // Push the thread that waiting for completion
+        // of desynchronization:
+        desync_cond_.signal();
+    }
+}
+
 void galera::ReplicatorSMM::desync()
 {
     wsrep_seqno_t seqno_l;
+
+    // We should suspend RSU locks and other
+    // such actions until the end of SST:
+
+    desync_wait();
 
     ssize_t ret(gcs_.desync(&seqno_l));
 
@@ -1718,6 +1797,13 @@ void galera::ReplicatorSMM::desync()
         {
             local_monitor_.self_cancel(lo);
         }
+    }
+
+    // We should release the lock if desynchronization failed:
+
+    if ((ret || seqno_l < 0) && state_() != S_DONOR)
+    {
+        desync_off();
     }
 
     if (ret)
