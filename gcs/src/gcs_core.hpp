@@ -164,7 +164,11 @@ gcs_core_param_set (gcs_core_t* core, const char* key, const char* value);
 extern const char*
 gcs_core_param_get (gcs_core_t* core, const char* key);
 
-void gcs_core_get_status(gcs_core_t* core, gu::Status& status);
+extern void
+gcs_core_get_status(gcs_core_t* core, gu::Status& status);
+
+extern int
+gcs_core_get_desync (gcs_core_t* core);
 
 #ifdef GCS_CORE_TESTING
 

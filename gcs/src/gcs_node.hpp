@@ -42,7 +42,9 @@ struct gcs_node
     int              gcs_proto_ver;// supported protocol versions
     int              repl_proto_ver;
     int              appl_proto_ver;
-    int              desync_count;
+    int              desync_count; // desynchronization counter
+    int              saved_desync; // saved desynchronization counter 
+                                   // (to use after IST)
     gcs_node_state_t status;       // node status
     gcs_segment_t    segment;
     bool             count_last_applied; // should it be counted
