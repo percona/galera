@@ -49,8 +49,14 @@ namespace gu
             log_warn << "Failed to set MADV_DONTFORK on " << fd.name()
                      << ": " << err << " (" << strerror(err) << ")";
         }
+#elif defined(__FreeBSD__)
+        if (minherit(ptr, size, INHERIT_NONE))
+        {
+            int const err(errno);
+            log_warn << "Failed to set INHERIT_NONE on " << fd.name()
+                     << ": " << err << " (" << strerror(err) << ")";
+        }
 #endif
-
         /* benefits are questionable */
         if (sequential && posix_madvise (ptr, size, MADV_SEQUENTIAL))
         {

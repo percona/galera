@@ -103,6 +103,21 @@ void galera::MappedBuffer::reserve(size_t sz)
                 clear();
                 gu_throw_error(dummy_errno) << "mmap() failed";
             }
+#if defined(MADV_DONTFORK)
+            if (posix_madvise(tmp, sz, MADV_DONTFORK))
+            {
+                int const err(errno);
+                log_warn << "Failed to set MADV_DONTFORK on allocated "
+                         << "buffer: " << err << " (" << strerror(err) << ")";
+            }
+#elif defined(__FreeBSD__)
+            if (minherit(tmp, sz, INHERIT_NONE))
+            {
+                int const err(errno);
+                log_warn << "Failed to set INHERIT_NONE on allocated "
+                         << "buffer: " << err << " (" << strerror(err) << ")";
+            }
+#endif
             copy(buf_, buf_ + buf_size_, tmp);
             free(buf_);
             buf_ = tmp;
@@ -126,6 +141,21 @@ void galera::MappedBuffer::reserve(size_t sz)
                 clear();
                 gu_throw_error(dummy_errno) << "mmap() failed";
             }
+#if defined(MADV_DONTFORK)
+            if (posix_madvise(tmp, sz, MADV_DONTFORK))
+            {
+                int const err(errno);
+                log_warn << "Failed to set MADV_DONTFORK on allocated "
+                         << "buffer: " << err << " (" << strerror(err) << ")";
+            }
+#elif defined(__FreeBSD__)
+            if (minherit(tmp, sz, INHERIT_NONE))
+            {
+                int const err(errno);
+                log_warn << "Failed to set INHERIT_NONE on allocated "
+                         << "buffer: " << err << " (" << strerror(err) << ")";
+            }
+#endif
             buf_ = tmp;
         }
     }
