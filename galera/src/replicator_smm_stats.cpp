@@ -333,7 +333,77 @@ galera::ReplicatorSMM::stats_get()
         log_warn << "Failed to allocate stats vars buffer to "
                  << (vec_size + tail_size)
                  << " bytes. System is running out of memory.";
+    }
 
+    return buf;
+}
+
+typedef enum status_vars_ext
+{
+    STATS_EXT_GCACHE_ACTUAL_POOL_SIZE = 0,
+    STATS_EXT_MAX
+} StatusExtVars;
+
+static const struct wsrep_stats_var wsrep_stats_ext[STATS_EXT_MAX + 1] =
+{
+    { "gcache_actual_pool_size",  WSREP_VAR_INT64,  { 0 }  },
+    { 0,                          WSREP_VAR_STRING, { 0 }  }
+};
+
+void
+galera::ReplicatorSMM::build_stats_ext_vars (
+    std::vector<struct wsrep_stats_var>& stats)
+{
+    const struct wsrep_stats_var* ptr(wsrep_stats_ext);
+
+    do
+    {
+        stats.push_back(*ptr);
+    }
+    while (ptr++->name != 0);
+
+    stats[STATS_EXT_GCACHE_ACTUAL_POOL_SIZE].value._int64 = 0;
+}
+
+const struct wsrep_stats_var*
+galera::ReplicatorSMM::stats_ext_get()
+{
+    if (S_DESTROYED == state_()) return 0;
+
+    std::vector<struct wsrep_stats_var> sv(wsrep_stats_ext_);
+
+    sv[STATS_EXT_GCACHE_ACTUAL_POOL_SIZE].value._int64 =
+       gcache_.actual_pool_size();
+
+    /* Create a buffer to be passed to the caller. */
+    // The buffer size needed:
+    // * Space for wsrep_stats_ext_ array
+    // * Trailing space for string store
+    size_t const vec_size(
+        (sv.size())*sizeof(struct wsrep_stats_var));
+    struct wsrep_stats_var* const buf(
+        reinterpret_cast<struct wsrep_stats_var*>(
+            gu_malloc(vec_size)));
+
+    if (buf)
+    {
+        size_t sv_pos(STATS_EXT_MAX);
+
+        assert(sv_pos == sv.size() - 1);
+
+        // NULL terminate
+        sv[sv_pos].name = 0;
+        sv[sv_pos].type = WSREP_VAR_STRING;
+        sv[sv_pos].value._string = 0;
+
+        // Finally copy sv vector to buf
+        memcpy(buf, &sv[0], vec_size);
+    }
+    else
+    {
+        log_warn << "Failed to allocate extended stats vars buffer to "
+                 << (vec_size)
+                 << " bytes. System is running out of memory.";
     }
 
     return buf;

@@ -120,3 +120,100 @@ namespace gu
         }
     }
 }
+
+/** Returns actual memory usage by allocated page range: **/
+
+/*
+ * Verify test macros to make sure we have mincore syscall:
+ */
+#if defined(_BSD_SOURCE) || defined(_SVID_SOURCE)
+
+/*
+ * The buffer size for mincore. 256 kilobytes is enough to request
+ * information on the status of 1GB memory map (256K * 4096 bytes per
+ * page = 1GB) in one syscall (when a 4096-byte pages). Increasing this
+ * parameter allows us to save a few syscalls (when huge amounts of mmap),
+ * but it also raises the memory requirements for temporary buffer:
+ */
+#define GU_AMU_CHUNK 0x40000 /* Currently 256K, must be power of two. */
+
+size_t gu_actual_memory_usage (const void * const ptr, const size_t length)
+{
+    size_t size= 0;
+    if (length)
+    {
+        /*
+         * -PAGE_SIZE is same as ~(PAGE_SIZE-1), but creates less 
+         * potential problems due to implicit type cast in expressions:
+         */
+        uintptr_t first=
+            reinterpret_cast<uintptr_t> (ptr) & -GU_PAGE_SIZE;
+        const uintptr_t last=
+           (reinterpret_cast<uintptr_t> (ptr) + length - 1) & -GU_PAGE_SIZE;
+        const ptrdiff_t total=  last - first + GU_PAGE_SIZE;
+        size_t          pages=  total / GU_PAGE_SIZE;
+        size_t          chunks= pages / GU_AMU_CHUNK;
+        unsigned char * const map=
+            reinterpret_cast<unsigned char *> (malloc(chunks ? GU_AMU_CHUNK : pages));
+        if (map)
+        {
+            while (chunks--)
+            {
+                if (mincore(reinterpret_cast<void *> (first),
+                            (size_t) GU_AMU_CHUNK * GU_PAGE_SIZE, map) == 0)
+                {
+                    for (size_t i = 0; i < GU_AMU_CHUNK; i++)
+                    {
+                        if (map[i])
+                        {
+                            size += GU_PAGE_SIZE;
+                        }
+                    }
+                }
+                else
+                {
+                    log_fatal << "Unable to get in-core state vector "
+                                 "for page range. Aborting.";
+                    abort();
+                }
+                first += (size_t) GU_AMU_CHUNK * GU_PAGE_SIZE;
+            }
+            pages &= GU_AMU_CHUNK - 1;
+            if (mincore(reinterpret_cast<void *> (first),
+                        pages * GU_PAGE_SIZE, map) == 0)
+            {
+                for (size_t i = 0; i < pages; i++)
+                {
+                    if (map[i]) size += GU_PAGE_SIZE;
+                }
+            }
+            else
+            {
+                log_fatal << "Unable to get in-core state vector "
+                             "for page range. Aborting.";
+                abort();
+            }
+            free(map);
+        }
+        else
+        {
+            log_fatal << "Unable to allocate memory for in-core state vector. "
+                      << "Aborting.";
+            abort();
+        }
+    }
+    return size;
+}
+
+#else
+
+/*
+ * In case of absence mincore syscall we simply return the total size
+ * of memory-mapped region:
+ */
+size_t gu_actual_memory_usage (const void * const ptr, const size_t length)
+{
+    return length;
+}
+
+#endif

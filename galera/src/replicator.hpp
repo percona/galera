@@ -112,6 +112,7 @@ namespace galera
         virtual void process_sync(wsrep_seqno_t seqno_l) = 0;
 
         virtual const struct wsrep_stats_var* stats_get() = 0;
+        virtual const struct wsrep_stats_var* stats_ext_get() = 0;
         virtual void                          stats_reset() = 0;
         // static void stats_free(struct wsrep_stats_var*) must be declared in
         // the child class
