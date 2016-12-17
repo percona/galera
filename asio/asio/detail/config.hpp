@@ -654,7 +654,19 @@
 # if !defined(ASIO_HAS_TIMERFD)
 #  if defined(ASIO_HAS_EPOLL)
 #   if (__GLIBC__ > 2) || (__GLIBC__ == 2 && __GLIBC_MINOR__ >= 8)
-#    define ASIO_HAS_TIMERFD 1
+//
+// Currently timerfd is a source of unidentified problems
+// that break GCS unit-tests on some systems during testing
+// on the Jenkins. One of these problems has been found and
+// corrected: https://github.com/chriskohlhoff/asio/pull/145,
+// but there is another problem, because of which some of
+// compilations (on the systems with timerfd feature enabled)
+// occasionally lead to failures in the GCS unit-tests, that
+// may happen even after merging of the proposed correction
+// (i.e. problem, which is shown above is not unique one,
+// nevertheless after applying the correction probability
+// of failures in the GCS unit-test sharply decreased):
+//#    define ASIO_HAS_TIMERFD 1
 #   endif // (__GLIBC__ > 2) || (__GLIBC__ == 2 && __GLIBC_MINOR__ >= 8)
 #  endif // defined(ASIO_HAS_EPOLL)
 # endif // !defined(ASIO_HAS_TIMERFD)

@@ -883,6 +883,15 @@ gu::datetime::Date gcomm::evs::Proto::handle_timers()
     {
         Timer t(TimerList::value(timers_.begin()));
         timers_.erase(timers_.begin());
+        if (state() == S_LEAVING)
+        {
+            // Due to the implementation details of the ASIO,
+            // timers can be triggered during the normal shutdown
+            // sequence, which leads to problems. We may ignore
+            // timers, if we are in the process of completing
+            // the work:
+            continue;
+        }
         switch (t)
         {
         case T_INACTIVITY:

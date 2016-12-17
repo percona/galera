@@ -429,10 +429,19 @@ void epoll_reactor::run(bool block, op_queue<operation>& ops)
       {
         // If timeout was expired, we should read the expiration counter:
         uint64_t count;
-        if (read(timer_fd_, &count, sizeof(count)))
+        ssize_t len = sizeof(count);
+        char * buf = reinterpret_cast<char *>(&count);
+        for(;;)
         {
-          // Just to ignore return value of the read() function
-          // without compiler warning...
+          ssize_t ret = read(timer_fd_, buf, len);
+          if(ret == len) break;
+          if (ret < 0)
+          {
+            if (EINTR != errno) break;
+            continue;
+          }
+          buf += ret;
+          len -= ret;
         }
       }
       check_timers = true;

@@ -998,8 +998,9 @@ void gcomm::GMCast::reconnect()
         {
             if (ae.retry_cnt() > ae.max_retries())
             {
-                log_info << " cleaning up " << remote_uuid << " ("
-                         << remote_addr << ")";
+                log_info << self_string()
+                         << " cleaning up " << remote_uuid
+                         << " (" << remote_addr << ")";
                 remote_addrs_.erase(i);
                 continue;//no reference to remote_addr or remote_uuid after this
             }
