@@ -1399,6 +1399,12 @@ void gcs_core_get_status(gcs_core_t* core, gu::Status& status)
     gu_mutex_unlock(&core->send_lock);
 }
 
+int
+gcs_core_get_desync (gcs_core_t* core)
+{
+    return gcs_group_get_desync(&core->group);
+}
+
 #ifdef GCS_CORE_TESTING
 
 gcs_backend_t*

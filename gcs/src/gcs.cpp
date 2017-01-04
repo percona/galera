@@ -731,13 +731,27 @@ gcs_become_joined (gcs_conn_t* conn)
     }
 }
 
-static void
+static long
 gcs_become_synced (gcs_conn_t* conn)
 {
     gcs_shift_state (conn, GCS_CONN_SYNCED);
     conn->sync_sent = false;
     gu_debug("Become synced, FC offset %ld", conn->fc_offset);
     conn->fc_offset = 0;
+
+    // If the node returned from NON-PRIMARY state, it can
+    // immediately go to DONOR state (bypassing SYNCED) -
+    // if before the transition to the NON-PRIMARY this node
+    // was already desynchronized:
+
+    if (gcs_core_get_desync(conn->core)) {
+        gcs_shift_state (conn, GCS_CONN_DONOR);
+        if (conn->max_fc_state < GCS_CONN_DONOR) {
+            _release_flow_control (conn);
+        }
+        return 0;
+    }
+    return 1;
 }
 
 /* to be called under protection of both recv_q and fc_lock */
@@ -1023,10 +1037,21 @@ gcs_handle_actions (gcs_conn_t*          conn,
             gcs_become_primary (conn);
         else
             gcs_become_joined (conn);
+        // If this message is received in the process of returning
+        // from a NON-PRIMARY state (after IST), then we should not
+        // to deliver it to the application:
+        if (gcs_core_get_desync(conn->core)) {
+            ret = 0;
+        }
         break;
     case GCS_ACT_SYNC:
         ret = gcs_handle_state_change (conn, &rcvd->act);
-        gcs_become_synced (conn);
+        // If this message is received in the process of returning
+        // from a NON-PRIMARY state (after IST), then we should not
+        // to deliver it to the application:
+        if (gcs_become_synced (conn) == 0) {
+            ret = 0;
+        }
         break;
     default:
         break;

@@ -430,6 +430,13 @@ gcs_group_handle_comp_msg (gcs_group_t* group, const gcs_comp_msg_t* comp)
         gu_info ("Received self-leave message.");
         assert (0 == new_nodes_num);
         assert (!prim_comp);
+        /* Reset node desynchronization counter and the saved state
+           when node was disconnected from the cluster: */
+        if (group->my_idx >= 0 && group->nodes[group->my_idx].desync_count) {
+            group->prim_state = GCS_NODE_STATE_JOINED;
+            group->nodes[group->my_idx].desync_count = 0;
+            group->nodes[group->my_idx].saved_desync = 0;
+        }
     }
 
     if (prim_comp) {
@@ -834,8 +841,21 @@ gcs_group_handle_sync_msg  (gcs_group_t* group, const gcs_recv_msg_t* msg)
 
         group_redo_last_applied (group);//from now on this node must be counted
 
-        gu_info ("Member %d.%d (%s) synced with group.",
-                 sender_idx, sender->segment, sender->name);
+        // If before the SST or IST node was already out of sync,
+        // then we need to return it back:
+
+        if (sender->saved_desync) {
+            gu_info ("Member %d.%d (%s) returned to the desynchronized state.",
+                     sender_idx, sender->segment, sender->name);
+            sender->desync_count = sender->saved_desync;
+            sender->saved_desync = 0;
+            sender->status = GCS_NODE_STATE_DONOR;
+            memcpy (sender->donor, sender->id, GCS_COMP_MEMB_ID_MAX_LEN+1);
+        }
+        else {
+            gu_info ("Member %d.%d (%s) synced with group.",
+                     sender_idx, sender->segment, sender->name);
+        }
 
         return (sender_idx == group->my_idx);
     }
@@ -1298,6 +1318,18 @@ group_select_donor (gcs_group_t* group,
         gcs_node_t* const joiner = &group->nodes[joiner_idx];
         gcs_node_t* const donor  = &group->nodes[donor_idx];
 
+        // If the node has been desynchronized earlier, but
+        // then temporarily came into a NON-PRIMARY state and
+        // returned from it back, then we must take into
+        // account its previous desynchronization counter:
+
+        if (donor->saved_desync) {
+            donor->desync_count = donor->saved_desync;
+            donor->saved_desync = 0;
+            donor->count_last_applied = true;
+        }
+
+        // Increment by one the desynchronization counter:
         donor->desync_count += 1;
 
         if (desync && 1 == donor->desync_count) {
@@ -1637,7 +1669,8 @@ gcs_group_get_status (gcs_group_t* group, gu::Status& status)
     {
         const gcs_node_t& this_node(group->nodes[group->my_idx]);
 
-        desync_count = this_node.desync_count;
+        desync_count = this_node.desync_count ||
+                       this_node.saved_desync;
     }
     else
     {
@@ -1645,4 +1678,29 @@ gcs_group_get_status (gcs_group_t* group, gu::Status& status)
     }
 
     status.insert("desync_count", gu::to_string(desync_count));
+}
+
+// This function will be used at higher levels to determine the true
+// state of the desynchronization counter taking into account possibility
+// of temporary transition into the SYNCED state, which is necessary
+// to perform IST while returning from a NON-PRIMARY state:
+
+int
+gcs_group_get_desync (gcs_group_t* group)
+{
+    int desync_count; // make sure it is not initialized
+
+    if (gu_likely(group->my_idx >= 0))
+    {
+        const gcs_node_t& this_node(group->nodes[group->my_idx]);
+
+        desync_count = this_node.desync_count ||
+                       this_node.saved_desync;
+    }
+    else
+    {
+        desync_count = 0;
+    }
+
+    return desync_count;
 }
