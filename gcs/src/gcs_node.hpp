@@ -43,6 +43,8 @@ struct gcs_node
     int              repl_proto_ver;
     int              appl_proto_ver;
     int              desync_count;
+    int              desync_saved; // Value of the desync_count, which
+                                   // is saved before the IST.
     gcs_node_state_t status;       // node status
     gcs_segment_t    segment;
     bool             count_last_applied; // should it be counted

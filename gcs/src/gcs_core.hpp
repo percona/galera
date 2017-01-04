@@ -166,6 +166,8 @@ gcs_core_param_get (gcs_core_t* core, const char* key);
 
 void gcs_core_get_status(gcs_core_t* core, gu::Status& status);
 
+gcs_node_state_t gcs_core_get_state(gcs_core_t* cores);
+
 #ifdef GCS_CORE_TESTING
 
 /* gcs_core_send() interface does not allow enough concurrency control to model
