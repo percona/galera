@@ -1555,6 +1555,7 @@ galera::ReplicatorSMM::process_conf_change(void*                    recv_ctx,
                 case S_SYNCED:
                     state_.shift_to(S_SYNCED);
                     synced_cb_(app_ctx_);
+                    GU_DBUG_SYNC_WAIT("after_synced_cb");
                     break;
                 default:
                     log_debug << "next_state " << next_state;
@@ -1656,6 +1657,7 @@ void galera::ReplicatorSMM::process_sync(wsrep_seqno_t seqno_l)
 
     state_.shift_to(S_SYNCED);
     synced_cb_(app_ctx_);
+    GU_DBUG_SYNC_WAIT("after_synced_cb");
     local_monitor_.leave(lo);
 }
 
