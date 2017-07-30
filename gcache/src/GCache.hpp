@@ -100,6 +100,11 @@ namespace gcache
                                    ssize_t& size);
 
         /*!
+         * Returns actual gcache memory pool size (in bytes).
+         */
+        size_t actual_pool_size ();
+
+        /*!
          * Returns allocated gcache memory pool size (in bytes).
          */
         size_t allocated_pool_size ();

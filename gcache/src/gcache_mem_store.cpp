@@ -75,6 +75,11 @@ MemStore::seqno_reset()
     }
 }
 
+size_t MemStore::actual_pool_size ()
+{
+  return size_;
+}
+
 size_t MemStore::allocated_pool_size ()
 {
   return size_;

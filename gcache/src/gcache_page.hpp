@@ -10,8 +10,9 @@
 #include "gcache_memops.hpp"
 #include "gcache_bh.hpp"
 
-#include "gu_fdesc.hpp"
-#include "gu_mmap.hpp"
+#include <gu_fdesc.hpp>
+#include <gu_mmap.hpp>
+#include <gu_lock.hpp>
 
 #include <string>
 
@@ -53,6 +54,7 @@ namespace gcache
 
         void* parent() const { return ps_; }
 
+        size_t actual_pool_size (gu::Mutex * mtx);
         size_t allocated_pool_size ();
 
     private:

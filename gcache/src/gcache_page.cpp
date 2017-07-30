@@ -169,6 +169,17 @@ gcache::Page::realloc (void* ptr, size_type size)
     }
 }
 
+size_t gcache::Page::actual_pool_size (gu::Mutex * mtx)
+{
+    void*  ptr= reinterpret_cast<void *> (mmap_.ptr);
+    size_t used= mmap_.size - min_space_;
+    size_t size;
+    mtx->unlock();
+    size = gu_actual_memory_usage(ptr, used);
+    mtx->lock();
+    return size;
+}
+
 size_t gcache::Page::allocated_pool_size ()
 {
     return mmap_.size - min_space_;

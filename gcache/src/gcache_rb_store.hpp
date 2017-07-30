@@ -14,6 +14,7 @@
 #include <gu_fdesc.hpp>
 #include <gu_mmap.hpp>
 #include <gu_uuid.hpp>
+#include <gu_lock.hpp>
 
 #include <string>
 
@@ -111,6 +112,7 @@ namespace gcache
             assert_size_free();
         }
 
+        size_t actual_pool_size (gu::Mutex * mtx);
         size_t allocated_pool_size ();
 
     private:

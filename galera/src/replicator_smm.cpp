@@ -186,7 +186,8 @@ galera::ReplicatorSMM::ReplicatorSMM(const struct wsrep_init_args* args)
     preordered_id_      (),
     incoming_list_      (""),
     incoming_mutex_     (),
-    wsrep_stats_        ()
+    wsrep_stats_        (),
+    wsrep_stats_ext_    ()
 {
     /*
       Register the application callback that should be called
@@ -268,6 +269,7 @@ galera::ReplicatorSMM::ReplicatorSMM(const struct wsrep_init_args* args)
     cert_.assign_initial_position(seqno, trx_proto_ver());
 
     build_stats_vars(wsrep_stats_);
+    build_stats_ext_vars(wsrep_stats_ext_);
 }
 
 galera::ReplicatorSMM::~ReplicatorSMM()

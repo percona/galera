@@ -126,6 +126,7 @@ gcache::PageStore::cleanup ()
 #ifndef NDEBUG
     size_t counter = 0;
 #endif
+    gu::Lock lock(mtx_);
 /*
  * 1. We must release the page if the size (keep_size_ = gcache.keep_pages_size)
  *    and count (keep_page_ = gcache.keep_pages_count) are NOT set (they are both 0).
@@ -156,6 +157,7 @@ gcache::PageStore::cleanup ()
 void
 gcache::PageStore::reset ()
 {
+    gu::Lock lock(mtx_);
     while (pages_.size() > 0 && delete_page()) {};
 }
 
@@ -163,6 +165,8 @@ inline void
 gcache::PageStore::new_page (size_type size)
 {
     Page* const page(new Page(this, make_page_name (base_name_, count_), size));
+
+    gu::Lock lock(mtx_);
 
     pages_.push_back (page);
     total_size_ += page->size();
@@ -175,6 +179,7 @@ gcache::PageStore::PageStore (const std::string& dir_name,
                               size_t             page_size,
                               size_t             keep_page)
     :
+    mtx_       (),
     base_name_ (make_base_name(dir_name)),
     keep_size_ (keep_size),
     page_size_ (page_size),
@@ -210,6 +215,8 @@ gcache::PageStore::PageStore (const std::string& dir_name,
 
 gcache::PageStore::~PageStore ()
 {
+    mtx_.lock();
+
     try
     {
         while (pages_.size() && delete_page()) {};
@@ -227,6 +234,8 @@ gcache::PageStore::~PageStore ()
         log_error << "Could not delete " << pages_.size()
                   << " page files: some buffers are still \"mmapped\".";
     }
+
+    mtx_.unlock();
 
     pthread_attr_destroy (&delete_page_attr_);
 }
@@ -299,9 +308,23 @@ gcache::PageStore::realloc (void* ptr, size_type const size)
     return ret;
 }
 
+size_t gcache::PageStore::actual_pool_size (gu::Mutex * mtx)
+{
+  size_t size= 0;
+  gu::Lock lock(mtx_);
+  std::deque<Page*>::iterator ptr= pages_.begin();
+  while (ptr != pages_.end())
+  {
+    Page* page= *ptr++;
+    size += page->actual_pool_size(mtx);
+  }
+  return size;
+}
+
 size_t gcache::PageStore::allocated_pool_size ()
 {
   size_t size= 0;
+  gu::Lock lock(mtx_);
   std::deque<Page*>::iterator ptr= pages_.begin();
   while (ptr != pages_.end())
   {
