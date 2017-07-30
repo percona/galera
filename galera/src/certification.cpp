@@ -118,6 +118,17 @@ galera::Certification::purge_for_trx_v3(TrxHandle* trx)
     for (long i = 0; i < keys.count(); ++i)
     {
         const KeySet::KeyPart& kp(keys.next());
+
+        // The key in the incoming write set may be empty for
+        // locally created transaction. However, such key cannot
+        // be inserted in the certification index, therefore we
+        // can just skip it immediately:
+
+        if (kp.version() == KeySet::EMPTY)
+        {
+            continue;
+        }
+
         KeySet::Key::Prefix const p(kp.prefix());
 
         KeyEntryNG ke(kp);
