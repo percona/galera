@@ -1191,6 +1191,9 @@ wsrep_status_t galera::ReplicatorSMM::replay_trx(TrxHandleMaster& trx,
             assert(trx.owned());
             bool unused(false);
             lock.unlock();
+
+            GU_DBUG_SYNC_WAIT("start_of_replay_trx");
+
             gu_trace(ts.apply(trx_ctx, apply_cb_, meta, unused));
             lock.lock();
             assert(false == unused);
