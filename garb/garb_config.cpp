@@ -95,7 +95,7 @@ Config::Config (int argc, char* argv[])
 
     if (vm.count("version"))
     {
-        log_info << GALERA_VER << ".r" << GALERA_REV;
+        log_info << GALERA_VER << "." << GALERA_REV;
         exit_= true;
         return;
     }
