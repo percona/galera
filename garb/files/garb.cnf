@@ -3,6 +3,9 @@
 
 # REMOVE THIS AFTER CONFIGURATION
 
+# Galera node name. Default value if empty is "garb"
+# GALERA_NODE_NAME=""
+
 # A comma-separated list of node addresses (address[:port]) in the cluster
 # GALERA_NODES=""
 
