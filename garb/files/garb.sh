@@ -27,17 +27,20 @@ _SYSTEMCTL_SKIP_REDIRECT=true
 
 # Source function library.
 if [ -f /etc/redhat-release ]; then
+	# shellcheck disable=SC1091
 	. /etc/init.d/functions
+	# shellcheck disable=SC1091
 	. /etc/sysconfig/network
 	config=/etc/sysconfig/garb
 else
+	# shellcheck disable=SC1091
 	. /lib/lsb/init-functions
 	config=/etc/default/garbd
 fi
 
 log_failure() {
 	if [ -f /etc/redhat-release ]; then
-		echo -n $*
+		echo -n "$@"
 		failure "$*"
 		echo
 	else
@@ -58,10 +61,10 @@ program_start() {
 	local rcode
 	local gpid
 	if [ -f /etc/redhat-release ]; then
-                if [ -r $PIDFILE ];then
+                if [ -r $PIDFILE ]; then
                     gpid=$(cat $PIDFILE)
                     echo -n $"Stale pid file found at $PIDFILE"
-                    if [[ -n ${gpid:-} ]] && kill -0 $gpid;then
+                    if [[ -n ${gpid:-} ]] && kill -0 "${gpid}"; then
                         echo -n $"Garbd already running wiht PID $gpid"
                         exit 17
                     else
@@ -78,10 +81,10 @@ program_start() {
 		echo
 	else
 
-                if [ -r $PIDFILE ];then
+                if [ -r $PIDFILE ]; then
                     gpid=$(cat $PIDFILE)
                     log_daemon_msg "Stale pid file found at $PIDFILE"
-                    if [[ -n ${gpid:-} ]] && kill -0 $gpid;then
+                    if [[ -n ${gpid:-} ]] && kill -0 "${gpid}"; then
                         log_daemon_msg "Garbd already running wiht PID $gpid"
                         exit 17
                     else
@@ -112,7 +115,11 @@ program_stop() {
 		echo -n $"Shutting down $prog: "
 		killproc -p $PIDFILE
 		rcode=$?
-		[ $rcode -eq 0 ] && echo_success || echo_failure
+		if [ $rcode -eq 0 ]; then
+			echo_success
+		else
+			echo_failure
+		fi
 	else
 		start-stop-daemon --stop --quiet --oknodo --retry TERM/30/KILL/5 \
 		                  --pidfile $PIDFILE
@@ -137,8 +144,8 @@ start() {
 
 	if [ -r $PIDFILE ]; then
 		local PID=$(cat ${PIDFILE})
-		if ps -p $PID >/dev/null 2>&1; then
-			log_failure "$prog is already running with PID $PID"
+		if ps -p "${PID}" >/dev/null 2>&1; then
+			log_failure "$prog is already running with PID ${PID}"
 			return 3 # ESRCH
 		else
 			rm -f $PIDFILE
@@ -162,11 +169,12 @@ start() {
 	OPTIONS="-d -a gcomm://${GALERA_NODES// /,}"
 	# substitute space with comma for backward compatibility
 
-	[ -n "$GALERA_GROUP" ]   && OPTIONS="$OPTIONS -g '$GALERA_GROUP'"
-	[ -n "$GALERA_OPTIONS" ] && OPTIONS="$OPTIONS -o '$GALERA_OPTIONS'"
-	[ -n "$LOG_FILE" ]       && OPTIONS="$OPTIONS -l '$LOG_FILE'"
+	[ -n "$GALERA_NODE_NAME" ] && OPTIONS="$OPTIONS -n '$GALERA_NODE_NAME'"
+	[ -n "$GALERA_GROUP" ]     && OPTIONS="$OPTIONS -g '$GALERA_GROUP'"
+	[ -n "$GALERA_OPTIONS" ]   && OPTIONS="$OPTIONS -o '$GALERA_OPTIONS'"
+	[ -n "$LOG_FILE" ]         && OPTIONS="$OPTIONS -l '$LOG_FILE'"
 
-	eval program_start $OPTIONS
+	eval program_start "${OPTIONS}"
 }
 
 stop() {

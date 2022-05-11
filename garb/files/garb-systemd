@@ -1,13 +1,10 @@
 #!/bin/bash -ue
-#
-
 
 config=/etc/sysconfig/garb
 
 log_failure() {
-    echo " ERROR! $@"
+    echo " ERROR! $*"
 }
-
 
 
 program_start() {
@@ -17,7 +14,6 @@ program_start() {
 
 
 start() {
-
 	if grep -q -E '^# REMOVE' $config;then 
 	    log_failure "Garbd config $config is not configured yet"
 	    return 0
@@ -38,13 +34,13 @@ start() {
 	OPTIONS="-a gcomm://${GALERA_NODES// /,}"
 	# substitute space with comma for backward compatibility
 
-	[ -n "${GALERA_GROUP:-}" ]   && OPTIONS="$OPTIONS -g '$GALERA_GROUP'"
-	[ -n "${GALERA_OPTIONS:-}" ] && OPTIONS="$OPTIONS -o '$GALERA_OPTIONS'"
-	[ -n "${LOG_FILE:-}" ]       && OPTIONS="$OPTIONS -l '$LOG_FILE'"
+	[ -n "${GALERA_NODE_NAME:-}" ] && OPTIONS="$OPTIONS -n '$GALERA_NODE_NAME'"
+	[ -n "${GALERA_GROUP:-}" ]     && OPTIONS="$OPTIONS -g '$GALERA_GROUP'"
+	[ -n "${GALERA_OPTIONS:-}" ]   && OPTIONS="$OPTIONS -o '$GALERA_OPTIONS'"
+	[ -n "${LOG_FILE:-}" ]         && OPTIONS="$OPTIONS -l '$LOG_FILE'"
 
-	eval program_start $OPTIONS
+	eval program_start "${OPTIONS}"
 }
-
 
 
 # See how we were called.

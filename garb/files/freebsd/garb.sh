@@ -14,6 +14,8 @@
 #                              (default empty).
 #  garb_galera_group (str):    Galera cluster name, should be the same as on the rest of the nodes.
 #                              (default empty).
+#  garb_galera_node_name (str): Galera node name, if not set default is "garb"
+#
 # Optional:
 #  garb_galera_options (str):  Optional Galera internal options string (e.g. SSL settings)
 #                              see http://www.codership.com/wiki/doku.php?id=galera_parameters
@@ -32,6 +34,7 @@ load_rc_config $name
 
 # set defaults
 : ${garb_enable="NO"}
+: ${garb_galera_node_name=""}
 : ${garb_galera_nodes=""}
 : ${garb_galera_group=""}
 : ${garb_galera_options=""}
@@ -70,9 +73,10 @@ garb_prestart()
 	done
 
 	command_args="$command_args -a gcomm://$ADDRESS"
-	[ -n "$garb_galera_group" ]   && command_args="$command_args -g $garb_galera_group"
-	[ -n "$garb_galera_options" ] && command_args="$command_args -o $garb_galera_options"
-	[ -n "$garb_log_file" ]       && command_args="$command_args -l $garb_log_file"
+	[ -n "$garb_galera_node_name" ] && command_args="$command_args -n $garb_galera_node_name"
+	[ -n "$garb_galera_group" ]     && command_args="$command_args -g $garb_galera_group"
+	[ -n "$garb_galera_options" ]   && command_args="$command_args -o $garb_galera_options"
+	[ -n "$garb_log_file" ]         && command_args="$command_args -l $garb_log_file"
 	return 0
 }
 
