@@ -76,12 +76,13 @@ RecvLoop::loop()
     std::thread sst_out_log;
     std::thread sst_err_log;
 
-    ssize_t sst_source = 0;
+    gu_uuid_t sst_source_uuid;
     bool sst_requested = false;
     std::atomic_bool sst_status_keep_running{true};
     std::thread sst_status_thread;
 
     bool sst_ended = false;
+    bool sst_terminated = false;
     while (1)
     {
         gcs_action act;
@@ -121,7 +122,8 @@ RecvLoop::loop()
                     uuid_  = cc.uuid;
                     seqno_ = cc.seqno;
                     sst_requested = true;
-                    sst_source =  gcs_.request_state_transfer (config_.sst(),config_.donor());
+                    auto sst_source_idx =  gcs_.request_state_transfer (config_.sst(),config_.donor());
+                    sst_source_uuid = cc.memb[sst_source_idx].uuid_;
                     if(config_.recv_script().empty()) {
                         gcs_.join(gu::GTID(cc.uuid, cc.seqno), 0);
                     } else {
@@ -141,12 +143,20 @@ RecvLoop::loop()
 
                         sst_status_thread = std::thread([&](){
                             while(sst_status_keep_running) {
-                              auto st = gcs_.state_for(sst_source);
-                              if(st != GCS_NODE_STATE_DONOR) {
+
+                              auto st = gcs_.state_for(sst_source_uuid);
+                              if(st == GCS_NODE_STATE_MAX) {
+                                  log_info << "Donor is no longer in the cluster, interrupting script";
+                                  sst_terminated = true;
+                                  p.terminate();
+                                  break;
+                              } else if(st != GCS_NODE_STATE_DONOR) {
                                   // The donor is going back to SYNCED. If SST streaming didn't start yet,
                                   // it won't.
-                                  // Send SIGINT to the script and let it handle this situation.
-                                  p.interrupt();
+                                  // Send SIGTERM to the script and let it handle this situation.
+                                  log_info << "Donor no longer in donor state, interrupting script";
+                                  sst_terminated = true;
+                                  p.terminate();
                                   break;
                               }
                               std::this_thread::sleep_for(std::chrono::seconds(1));
@@ -162,7 +172,15 @@ RecvLoop::loop()
                 if (cc.memb.size() == 0) // SELF-LEAVE after closing connection
                 {
                     if(!config_.recv_script().empty()) {
-                        if(sst_ended) {
+                      if (sst_terminated) {
+                            log_info << "SST script already terminated";
+                            sst_err_log.join();
+                            sst_out_log.join();
+                            sst_status_keep_running = false;
+                            sst_status_thread.join();
+                            log_info << "Exiting main loop";
+                            return 1;
+                        } else if(sst_ended) {
                             // Good path: we decided to close the connection after the receiver script closed its
                             // standard output. We wait for it to exit and return its error code.
                             log_info << "Waiting for SST script to stop";

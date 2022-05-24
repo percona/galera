@@ -33,7 +33,7 @@ public:
 
     int  proto_ver() const { return gcs_proto_ver(gcs_); }
 
-    gcs_node_state_t state_for(ssize_t idx);
+    gcs_node_state_t state_for(gu_uuid_t uuid);
 
     void close (bool explicit_close = false);
 

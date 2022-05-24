@@ -238,10 +238,18 @@ struct gcs_conn
     gu::Progress<gcs_seqno_t>* progress_;
 };
 
-gcs_node_state_t gcs_get_state_for_idx(gcs_conn_t* conn, ssize_t idx) {
+gcs_node_state_t gcs_get_state_for_uuid(gcs_conn_t* conn, gu_uuid_t uuid) {
+  std::stringstream ss;
+  ss << uuid;
+
   auto group = gcs_core_get_group(conn->core);
-  auto& node = group->nodes[idx];
-  return node.status;
+  for(int idx = 0; idx < group->num; ++idx) {
+    auto const& node = group->nodes[idx];
+    if(ss.str() == node.id) {
+      return node.status;
+    }
+  }
+  return GCS_NODE_STATE_MAX; // node gone
 }
 
 // Oh C++, where art thou?

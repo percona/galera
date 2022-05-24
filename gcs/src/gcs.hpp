@@ -516,7 +516,7 @@ extern void gcs_join_notification(gcs_conn_t *conn);
 extern void
 gcs_fetch_pfs_info (gcs_conn_t* conn, wsrep_node_info_t* entries, uint32_t size);
 
-gcs_node_state_t gcs_get_state_for_idx(gcs_conn_t* conn, ssize_t idx);
+gcs_node_state_t gcs_get_state_for_uuid(gcs_conn_t* conn, gu_uuid_t uuid);
 #endif /* PXC */
 
 /*! A node with this name will be treated as a stateless arbitrator */

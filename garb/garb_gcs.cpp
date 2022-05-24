@@ -170,8 +170,8 @@ Gcs::close (bool explicit_close)
     }
 }
 
-gcs_node_state_t Gcs::state_for(ssize_t idx) {
-  return gcs_get_state_for_idx(gcs_, idx);
+gcs_node_state_t Gcs::state_for(gu_uuid_t uuid) {
+  return gcs_get_state_for_uuid(gcs_, uuid);
 }
 
 } /* namespace garb */
