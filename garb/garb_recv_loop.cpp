@@ -174,12 +174,13 @@ RecvLoop::loop()
                     if(!config_.recv_script().empty()) {
                       if (sst_terminated) {
                             log_info << "SST script already terminated";
+                            const auto ret = p.wait();
                             sst_err_log.join();
                             sst_out_log.join();
                             sst_status_keep_running = false;
                             sst_status_thread.join();
                             log_info << "Exiting main loop";
-                            return 1;
+                            return ret;
                         } else if(sst_ended) {
                             // Good path: we decided to close the connection after the receiver script closed its
                             // standard output. We wait for it to exit and return its error code.

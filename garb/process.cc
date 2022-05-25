@@ -91,7 +91,7 @@ void process::execute(const char *type, char **env) {
   int const child_end(parent_end == PIPE_READ ? PIPE_WRITE : PIPE_READ);
   int const close_fd(parent_end == PIPE_READ ? STDOUT_FD : STDIN_FD);
 
-  char *const pargv[4] = {strdup("sh"), strdup("-c"), strdup(str_), NULL};
+  char *const pargv[4] = {strdup("bash"), strdup("-c"), strdup(str_), NULL};
 
   // Create the second pipe (needed only if type = "rw")
   // One pipe for reading and one pipe for writing
