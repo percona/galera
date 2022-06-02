@@ -533,7 +533,7 @@ namespace galera
                     sent = socket.write(cbs[0]);
                 }
 
-                log_info << "sent " << sent << " bytes";
+                log_debug << "sent " << sent << " bytes";
             }
 
             void skip_bytes(gu::AsioSocket& socket, size_t bytes)
@@ -571,7 +571,7 @@ namespace galera
 
                 (void)msg.unserialize(buf.data(), buf.size(), 0);
 
-                log_info << "received header: " << n << " bytes, type "
+                log_debug << "received header: " << n << " bytes, type "
                           << msg.type() << " len " << msg.len();
 
                 switch (msg.type())
@@ -649,7 +649,7 @@ namespace galera
 
                         try
                         {
-                            log_info << "checking if in gcache";
+                            // log_info << "KH: checking if in gcache";
                             wbuf = gcache_.seqno_get_ptr(seqno_g, wsize);
 
                             skip_bytes(socket, msg.len() - offset);
@@ -662,19 +662,19 @@ namespace galera
                         }
                     }
 
-                    log_info << "In gcache? " << already_cached;
+                    // log_info << "KH: In gcache? " << already_cached;
                     if (!already_cached)
                     {
                         if (gu_likely(msg_type != Message::T_SKIP))
                         {
                             wsize = msg.len() - offset;
-                            log_info << "before gcache.malloc. wsize: " << wsize;
+                            //log_info << "KH: before gcache.malloc. wsize: " << wsize;
                             void*   const ptr(gcache_.malloc(wsize));
-                            log_info << "after gcache.malloc";
-                            fprintf(stderr, "ptr: x%llX\n", (unsigned long long)ptr);
+                            //log_info << "KH: after gcache.malloc";
+                            //fprintf(stderr, "KH: ptr: x%llX\n", (unsigned long long)ptr);
                             ssize_t const r
                                 (socket.read(gu::AsioMutableBuffer(ptr, wsize)));
-                            log_info << "after socket.read";
+                            //log_info << "KH: after socket.read";
 
                             if (gu_unlikely(r != wsize))
                             {

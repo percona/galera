@@ -58,7 +58,7 @@ galera::GcsActionSource::process_writeset(void* const              recv_ctx,
                           TrxHandleSlaveDeleter());
 
     gu_trace(tsp->unserialize<true>(act));
-    fprintf(stderr, "KH: tsp->action_.buf: x%llX\n", (unsigned long long)(tsp->action_.first));
+    //fprintf(stderr, "KH: tsp->action_.buf: x%llX\n", (unsigned long long)(tsp->action_.first));
     tsp->set_local(replicator_.source_id() == tsp->source_id());
     gu_trace(replicator_.process_trx(recv_ctx, tsp));
     exit_loop = tsp->exit_loop(); // this is the end of trx lifespan

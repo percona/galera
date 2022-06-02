@@ -183,9 +183,9 @@ size_t gu::AsioStreamReact::write(const AsioConstBuffer& buf) try
 {
     assert(buf.size() > 0);
     set_non_blocking(false);
-    fprintf(stderr, "writing: buf: x%llX, size: %ld\n", (unsigned long long)buf.data(), buf.size());
+    // fprintf(stderr, "KH: writing: buf: x%llX, size: %ld\n", (unsigned long long)buf.data(), buf.size());
     auto write_result(engine_->write(buf.data(), buf.size()));
-    log_info << "write_result.status: " << write_result.status;
+    // log_info << "KH: write_result.status: " << write_result.status;
     switch (write_result.status)
     {
     case AsioStreamEngine::success:
@@ -230,14 +230,14 @@ size_t gu::AsioStreamReact::read(const AsioMutableBuffer& buf) try
                 static_cast<unsigned char*>(buf.data()) + total_transferred,
                 buf.size() - total_transferred));
 #endif
-        log_info << "read_result.status: " << read_result.status;
+        //log_info << "KH: read_result.status: " << read_result.status;
         switch (read_result.status)
         {
         case AsioStreamEngine::success:
             total_transferred += read_result.bytes_transferred;
             break;
         case AsioStreamEngine::eof:
-            log_info << "AsioStreamEngine::eof";
+            //log_info << "KH: AsioStreamEngine::eof";
             return 0;
         case AsioStreamEngine::want_read:
         case AsioStreamEngine::want_write:

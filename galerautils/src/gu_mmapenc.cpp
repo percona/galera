@@ -41,6 +41,7 @@ static void swrite(const char* format, ...)
 #define S_DEBUG1(format, args...) //swrite(format, args)
 #define S_DEBUG2(format, args...) //swrite(format, args)
 // always
+#define S_DEBUG_A0(format) swrite(format)
 #define S_DEBUG_A(format, args...) swrite(format, args)
 
 unsigned long long ptr(void * ptr) {
@@ -362,7 +363,7 @@ unsigned long long EncMMap::page_number(char* addr) const {
 
 void EncMMap::dumpMappings() {
     for (auto mm : encMMaps) {
-        S_DEBUG1("Mappings for EncMMap x%llX (x%llX - x%llX) size: %ld START\n",
+        S_DEBUG_A("Mappings for EncMMap x%llX (x%llX - x%llX) size: %ld START\n",
         (unsigned long long)mm.first, (unsigned long long)mm.second.start_, (unsigned long long)mm.second.end_,
         mm.second.size_);
         mm.first->dumpMappingsInt();
@@ -374,11 +375,11 @@ void dumpMappings() {
 
 void EncMMap::dumpMappingsInt()
 {
-    S_DEBUG0("vpage -> ppage mappings start\n");
+    S_DEBUG_A0("vpage -> ppage mappings start\n");
     for (auto kv : vpage2ppage_) {
-        S_DEBUG1("vpage: x%llX, ppage: x%llX\n", (unsigned long long)kv.first, (unsigned long long)kv.second->ptr_);
+        S_DEBUG_A("vpage: x%llX, ppage: x%llX\n", (unsigned long long)kv.first, (unsigned long long)kv.second->ptr_);
     }
-    S_DEBUG0("vpage -> ppage mappings end\n");
+    S_DEBUG_A0("vpage -> ppage mappings end\n");
 }
 
 void EncMMap::handle_signal(siginfo_t* info) {
@@ -390,14 +391,11 @@ void EncMMap::handle_signal(siginfo_t* info) {
       (unsigned long long)p, reqPageNo, (page2protection_.get())[reqPageNo], (unsigned long long)reqPageStart, (unsigned long long)reqPageStart+get_page_size());
 
     if ((page2protection_.get())[reqPageNo] == PROT_NONE) {
-        //fprintf(stderr, "KH: PROT_NONE\n");
         // page is not mapped. Find free one
         auto p = memoryManager_.alloc();
         if (!p) {
-            //fprintf(stderr, "KH: No free pages\n");
             // try to find read page over dirty page
             char *vpageStart = nullptr;
-#if 1
             // free N pages, no more
             int limit = 100;
             S_DEBUG1("freeing ppages. allocated: %d\n", vpage2ppage_.size());
@@ -436,64 +434,6 @@ void EncMMap::handle_signal(siginfo_t* info) {
                 kv = vpage2ppage_.erase(kv);
                 if (limit-- == 0) break;
             }
-#else 
-            int bestProtection = PROT_NONE;
-            int bestProtectionIdx = -1;
-            for (auto kv : vpage2ppage_) {
-                int pageNo = page_number((char*)kv.first);
-               // swrite("pageNo: %d, prot: %d\n", pageNo, (page2protection_.get())[pageNo]);
-                if ((page2protection_.get())[pageNo] != PROT_NONE) {  // true for all
-                    if ((page2protection_.get())[pageNo] == (PROT_READ | PROT_WRITE) && bestProtection == PROT_NONE) {
-                        bestProtection = PROT_WRITE;
-                        bestProtectionIdx = pageNo;
-                        vpageStart = (char*)kv.first;
-                    } else if ((page2protection_.get())[pageNo] == PROT_READ) {
-                        bestProtection = PROT_READ;
-                        bestProtectionIdx = pageNo;
-                        vpageStart = (char*)kv.first;
-                        break;
-                    }
-                }
-            }
-            if(bestProtectionIdx == -1) {
-                // we are in troubles. Nothing to free
-                //fprintf(stderr, "KH: NO PAGE UNUSED PAGE FOUND!!!\n");
-            }
-            if (bestProtection == PROT_READ) {
-                S_DEBUG1("Found PROT_READ. idx: %llu, vpageStart: x%llX\n",
-                  bestProtectionIdx, (unsigned long long)vpageStart);
-                //fprintf(stderr, "KH: found PROT_READ\n");
-                // this is not dirty page. Just unmap.
-                //mprotectd(vpageStart, get_page_size(), PROT_NONE);
-                //munmap(vpageStart, get_page_size());
-                if (mmap(vpageStart, get_page_size(), PROT_NONE,
-                    MAP_ANONYMOUS|MAP_PRIVATE|MAP_FIXED, -1, 0) == MAP_FAILED) {
-                    S_DEBUG0("unmap failed!");
-                }
-                (page2protection_.get())[bestProtectionIdx] = PROT_NONE;
-                memoryManager_.free(vpage2ppage_[vpageStart]);
-                vpage2ppage_.erase(vpageStart);
-            } else {
-                S_DEBUG1("Found PROT_WRITE. idx: %llu, vpageStart: x%llX\n",
-                  bestProtectionIdx, (unsigned long long)vpageStart);
-                //fprintf(stderr, "KH: found PROT_WRITE. Flushing\n");
-                // bestProtection == PROT_WRITE. This is dirty page.
-                // flush the cache (encryption happens here)
-                char* dstPtr = (char*)mmapraw_.get_ptr() + bestProtectionIdx*get_page_size();
-                memcpy(dstPtr, vpageStart, get_page_size());
-
-                //mprotectd(vpageStart, get_page_size(), PROT_NONE);
-                //munmap(vpageStart, get_page_size());
-                if (mmap(vpageStart, get_page_size(), PROT_NONE,
-                    MAP_ANONYMOUS|MAP_PRIVATE|MAP_FIXED, -1, 0) == MAP_FAILED) {
-                    S_DEBUG0("unmap failed!");
-                }
-
-                (page2protection_.get())[bestProtectionIdx] = PROT_NONE;
-                memoryManager_.free(vpage2ppage_[vpageStart]);
-                vpage2ppage_.erase(vpageStart);
-            }
-#endif // free alg
             p = memoryManager_.alloc();
         }
 #if 1

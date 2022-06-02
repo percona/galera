@@ -373,7 +373,7 @@ void galera::ist::Receiver::run()
 {
     auto socket(acceptor_->accept());
     acceptor_->close();
-    log_info << "galera::ist::Receiver::run() accepted";
+    //log_info << "KH: galera::ist::Receiver::run() accepted";
 
     /* shall be initialized below, when we know at what seqno preload starts */
     gu::Progress<wsrep_seqno_t>* progress(NULL);
@@ -388,7 +388,7 @@ void galera::ist::Receiver::run()
         p.send_handshake(*socket);
         p.recv_handshake_response(*socket);
         p.send_ctrl(*socket, Ctrl::C_OK);
-        log_info << "handshake done";
+        //log_info << "KH: handshake done";
         // wait for SST to complete so that we know what is the first_seqno_
         {
             gu::Lock lock(mutex_);
@@ -417,9 +417,9 @@ void galera::ist::Receiver::run()
         while (true)
         {
             std::pair<gcs_action, bool> ret;
-            log_info << "before recv_ordered";
+            //log_info << "KH: before recv_ordered";
             p.recv_ordered(*socket, ret);
-            log_info << "after recv_ordered";
+            //log_info << "KH: after recv_ordered";
 
             gcs_action& act(ret.first);
 
@@ -429,7 +429,7 @@ void galera::ist::Receiver::run()
                 assert(0    == act.seqno_g);
                 assert(NULL == act.buf);
                 assert(0    == act.size);
-                log_info << "eof received, closing socket";
+                //log_info << "KH: eof received, closing socket";
                 break;
             }
 
@@ -603,7 +603,7 @@ void galera::ist::Receiver::run()
                     ts->mark_dummy_with_action(act.buf);
                 }
 
-                log_info << "####### Passing WS " << act.seqno_g;
+                log_debug << "####### Passing WS " << act.seqno_g;
                 handler_.ist_trx(ts, must_apply, preload);
                 break;
             }
@@ -797,12 +797,12 @@ void galera::ist::Sender::send(wsrep_seqno_t first, wsrep_seqno_t last,
         Proto p(gcache_,
                 version_, conf_.get(CONF_KEEP_KEYS, CONF_KEEP_KEYS_DEFAULT));
         int32_t ctrl;
-        log_info << "before hanshake";
+        // log_info << "KH: before hanshake";
         p.recv_handshake(*socket_);
         p.send_handshake_response(*socket_);
-        log_info << "handshake done";
+        // log_info << "KH: handshake done";
         ctrl = p.recv_ctrl(*socket_);
-        log_info << "after recv_ctrl";
+        // log_info << "KH: after recv_ctrl";
 
         if (ctrl < 0)
         {
@@ -829,7 +829,7 @@ void galera::ist::Sender::send(wsrep_seqno_t first, wsrep_seqno_t last,
         while ((n_read = gcache_.seqno_get_buffers(buf_vec, first)) > 0)
         {
             GU_DBUG_SYNC_WAIT("ist_sender_send_after_get_buffers");
-            log_info << "read " << first << " + " << n_read << " from gcache";
+            //log_info << "read " << first << " + " << n_read << " from gcache";
             for (wsrep_seqno_t i(0); i < n_read; ++i)
             {
                 // Preload start is the seqno of the lowest trx in
@@ -838,14 +838,14 @@ void galera::ist::Sender::send(wsrep_seqno_t first, wsrep_seqno_t last,
                 // should be set.
                 bool preload_flag(preload_start > 0 &&
                                   buf_vec[i].seqno_g() >= preload_start);
-                log_info << "Sender::send(): seqno " << buf_vec[i].seqno_g()
-                         << ", size " << buf_vec[i].size() << ", preload: "
-                         << preload_flag;
+                //log_info << "Sender::send(): seqno " << buf_vec[i].seqno_g()
+                //         << ", size " << buf_vec[i].size() << ", preload: "
+                //         << preload_flag;
                 p.send_ordered(*socket_, buf_vec[i], preload_flag);
                 log_info << "after send ordered";
                 if (buf_vec[i].seqno_g() == last)
                 {
-                    log_info << "sending eof";
+                    //log_info << "KH: sending eof";
                     send_eof(p, *socket_);
                     return;
                 }
