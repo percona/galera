@@ -66,7 +66,7 @@ public:
             return op_result{error, 0};
         }
     }
-
+// KH:
     virtual op_result write(const void* buf, size_t count) GALERA_OVERRIDE
     {
         clear_error();

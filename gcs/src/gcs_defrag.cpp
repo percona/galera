@@ -108,7 +108,7 @@ gcs_defrag_handle_frag (gcs_defrag_t*         df,
             df->size    = frg->act_size;
             df->sent_id = frg->act_id;
             df->reset   = false;
-
+// KH: here we allock from gcache
 #ifndef GCS_FOR_GARB
             DF_ALLOC();
 #else
@@ -142,10 +142,10 @@ gcs_defrag_handle_frag (gcs_defrag_t*         df,
 
     df->received += frg->frag_len;
     assert (df->received <= df->size);
-
+// KH: here the frag (mallocked) is copied into tail (gcache)
 #ifndef GCS_FOR_GARB
     assert (df->tail);
-    memcpy (df->tail, frg->frag, frg->frag_len);
+    memcpy (df->tail, frg->frag, frg->frag_len); // KH: and here we memcpy from mallocked to gcache
     df->tail += frg->frag_len;
 #else
     /* we skip memcpy since have not allocated any buffer */
@@ -155,7 +155,7 @@ gcs_defrag_handle_frag (gcs_defrag_t*         df,
 
 #if 1
     if (df->received == df->size) {
-        act->buf     = df->head;
+        act->buf     = df->head;  // KH: here gcache buffer is assigned to act->buf. It contains the whole action.
         act->buf_len = df->received;
         gcs_defrag_init (df, df->cache);
         return act->buf_len;

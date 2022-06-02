@@ -12,6 +12,9 @@
 #include "gu_hexdump.hpp"
 #include "key_data.hpp"
 
+namespace gu {
+    void dumpMappings();
+}
 
 namespace galera
 {
@@ -123,8 +126,15 @@ public:
         KeyPart (const gu::byte_t* const buf, size_t const size)
             : data_(buf)
         {
+            //fprintf(stderr, "KH: KeyPart(), serial_size: %ld, size: %ld, buf: x%llX\n", serial_size(), size, (unsigned long long)buf);
             if (gu_likely(size >= 8 && serial_size() <= size)) return;
-
+#if 0
+            gu::byte_t b1 = *buf;
+            gu::byte_t *pageStart = (gu::byte_t*)(((unsigned long long)buf/4096)*4096);
+            gu::byte_t b2 = *pageStart;
+            fprintf(stderr, "KH: KeyPart(), b1: %d, b2: %d, pageStart: x%llX\n", b1, b2, (unsigned long long)pageStart);
+#endif
+            gu::dumpMappings();
             throw_buffer_too_short (serial_size(), size);
         }
 

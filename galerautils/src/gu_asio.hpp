@@ -480,10 +480,22 @@ namespace gu
         size_t written(0);
         for (auto b(bufs.begin()); b != bufs.end(); ++b)
         {
+            fprintf(stderr, "write. data: x%llX, size: %ld\n",
+              (unsigned long long)b->data(), b->size());
             if (b->size() > 0)
             {
+#if 1
+// KH:
+                void *p = malloc(b->size());
+                memcpy(p, b->data(), b->size());
+                written += socket.write(AsioConstBuffer(p, b->size()));
+                free(p);
+#else
                 written += socket.write(AsioConstBuffer(b->data(), b->size()));
+#endif
             }
+            fprintf(stderr, "after write. data: x%llX, size: %ld\n",
+              (unsigned long long)b->data(), b->size());
         }
         return written;
     }

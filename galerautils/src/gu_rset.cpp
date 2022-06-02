@@ -468,6 +468,7 @@ read_size_count_v2_short(const byte_t* head_, ssize_t& size_, int& count_)
     uint32_t const h(gu_le32(*reinterpret_cast<const uint32_t*>(head_)));
     size_  = VER2_SIZE (h);
     count_ = VER2_COUNT(h);
+    //fprintf(stderr, "KH: read_size_count_v2_short() size_: %ld\n", size_);
     return sizeof(h);
 }
 

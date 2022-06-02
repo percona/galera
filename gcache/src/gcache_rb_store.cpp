@@ -12,6 +12,7 @@
 #include <gu_progress.hpp>
 #include <gu_hexdump.hpp>
 #include <gu_hash.h>
+#include <gu_mmapenc.hpp>
 
 #include <cassert>
 #include <iostream> // std::cerr
@@ -86,17 +87,25 @@ namespace gcache
 #else
         fd_        (name, check_size(size)),
 #endif /* PXC */
-        mmap_      (fd_),
-        preamble_  (static_cast<char*>(mmap_.ptr)),
+        mmapraw_   (fd_),
+        // KH: here we need factory creating encrypted/not encrypted mmap
+#if 1
+        mmapptr_   (std::make_shared<gu::EncMMap>("testkey", mmapraw_)),
+        mmap_      (*mmapptr_),
+#else
+        mmapptr_   (nullptr),
+        mmap_      (mmapraw_),
+#endif
+        preamble_  (static_cast<char*>(mmap_.get_ptr())),
         header_    (reinterpret_cast<int64_t*>(preamble_ + PREAMBLE_LEN)),
         start_     (reinterpret_cast<uint8_t*>(header_   + HEADER_LEN)),
-        end_       (reinterpret_cast<uint8_t*>(preamble_ + mmap_.size)),
+        end_       (reinterpret_cast<uint8_t*>(preamble_ + mmap_.get_size())),
         first_     (start_),
         next_      (first_),
         seqno2ptr_ (seqno2ptr),
         gid_       (gid),
 #ifdef PXC
-        max_used_  (first_ - static_cast<uint8_t*>(mmap_.ptr) +
+        max_used_  (first_ - static_cast<uint8_t*>(mmap_.get_ptr()) +
                     sizeof(BufferHeader)),
         freeze_purge_at_seqno_(SEQNO_ILL),
 #endif /* PXC */
@@ -303,7 +312,7 @@ namespace gcache
 
 #ifdef PXC
         size_t max_used =
-            next_ - static_cast<uint8_t*>(mmap_.ptr) + sizeof(BufferHeader);
+            next_ - static_cast<uint8_t*>(mmap_.get_ptr()) + sizeof(BufferHeader);
 
         if (max_used > max_used_)
         {

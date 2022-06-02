@@ -168,7 +168,9 @@ namespace gcache
 
         ProgressCallback*  pcb_;
         gu::FileDescriptor fd_;
-        gu::MMap           mmap_;
+        gu::MMap           mmapraw_;
+        std::shared_ptr<gu::IMMap>  mmapptr_;  // just to keep mmap_
+        gu::IMMap&         mmap_;
         char*        const preamble_; // ASCII text preamble
         int64_t*     const header_;   // cache binary header
         uint8_t*     const start_;    // start of cache area

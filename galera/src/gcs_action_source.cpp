@@ -58,6 +58,7 @@ galera::GcsActionSource::process_writeset(void* const              recv_ctx,
                           TrxHandleSlaveDeleter());
 
     gu_trace(tsp->unserialize<true>(act));
+    fprintf(stderr, "KH: tsp->action_.buf: x%llX\n", (unsigned long long)(tsp->action_.first));
     tsp->set_local(replicator_.source_id() == tsp->source_id());
     gu_trace(replicator_.process_trx(recv_ctx, tsp));
     exit_loop = tsp->exit_loop(); // this is the end of trx lifespan
@@ -159,7 +160,7 @@ ssize_t galera::GcsActionSource::process(void* recv_ctx, bool& exit_loop)
 {
     struct gcs_action act;
 
-    ssize_t rc(gcs_.recv(act));
+    ssize_t rc(gcs_.recv(act));  // KH: action has data in GCache allocated buffer
 
     /* Potentially we want to do corrupt() check inside commit_monitor_ as well
      * but by the time inconsistency is detected an arbitrary number of

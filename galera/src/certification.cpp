@@ -81,10 +81,11 @@ static void purge_key_set(galera::Certification::CertIndexNG& cert_index,
         const galera::KeySet::KeyPart& kp(key_set.next());
         galera::KeyEntryNG ke(kp);
         galera::Certification::CertIndexNG::iterator ci(cert_index.find(&ke));
-        assert(ci != cert_index.end());
+//        assert(ci != cert_index.end());
         if (ci == cert_index.end())
         {
             log_warn << "Could not find key from index";
+            assert(0);
             continue;
         }
         galera::KeyEntryNG* const kep(*ci);

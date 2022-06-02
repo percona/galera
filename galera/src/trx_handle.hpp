@@ -722,7 +722,9 @@ namespace galera
         gu::MemPool<true>&     mem_pool_;
         WriteSetIn             write_set_;
         void* const            buf_;
+public: // KH:
         std::pair<const void*, size_t> action_;
+private:
         bool                   certified_;
         bool                   committed_;
         bool                   exit_loop_;

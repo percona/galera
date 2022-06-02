@@ -301,7 +301,7 @@ core_msg_send_retry (gcs_core_t*    core,
                      size_t         buf_len,
                      gcs_msg_type_t type)
 {
-    ssize_t ret;
+    ssize_t ret; // KH: here the actual data is send. but buf is mallocked, not from gcache
     while ((ret = core_msg_send (core, buf, buf_len, type)) == -EAGAIN) {
         /* wait for primary configuration - sleep 0.01 sec */
         gu_debug ("Backend requested wait");
@@ -358,7 +358,8 @@ gcs_core_send (gcs_core_t*          const conn,
     int            idx  = 0;
     const uint8_t* ptr  = (const uint8_t*)action[idx].ptr;
     size_t         left = action[idx].size;
-
+// KH: here ptr is from gcache, but it is chunked below and memcopied
+// so gcache ptr is not passed to the socket
     do {
         const size_t chunk_size =
             act_size < frg.frag_len ? act_size : frg.frag_len;
@@ -550,7 +551,7 @@ core_handle_act_msg (gcs_core_t*          core,
                          "not commonly supported version.");
             }
         }
-
+        // KH: here msg->buf is connected to frg, so frg contains mallocked buffer
         ret = gcs_act_proto_read (&frg, msg->buf, msg->size);
 
         if (gu_unlikely(ret)) {
@@ -566,7 +567,7 @@ core_handle_act_msg (gcs_core_t*          core,
         if (ret > 0) { /* complete action received */
             assert (act->act.buf_len == ret);
 #ifndef GCS_FOR_GARB
-            assert (NULL != act->act.buf);
+            assert (NULL != act->act.buf);  // KH: buf is from gcache ( I hope )
 #else
             assert (NULL == act->act.buf);
 #endif
@@ -1181,7 +1182,7 @@ static long core_msg_causal(gcs_core_t* conn,
 ssize_t gcs_core_recv (gcs_core_t*          conn,
                        struct gcs_act_rcvd* recv_act,
                        long long            timeout)
-{
+{ // KH: recv_msg is mallocked buffer 
     struct gcs_recv_msg* const recv_msg(&conn->recv_msg);
     ssize_t ret(0);
 
@@ -1204,7 +1205,7 @@ ssize_t gcs_core_recv (gcs_core_t*          conn,
         assert (recv_act->act.type    == GCS_ACT_ERROR);
         assert (recv_act->id          == GCS_SEQNO_ILL);
         assert (recv_act->sender_idx  == -1);
-
+// KH: here we read from socket, but data goes to mallocked buffer (recv_msg)
         ret = core_msg_recv (&conn->backend, recv_msg, timeout);
         if (gu_unlikely (ret <= 0)) {
             goto out; /* backend error while receiving message */
