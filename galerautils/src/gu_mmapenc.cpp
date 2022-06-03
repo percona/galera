@@ -37,9 +37,9 @@ static void swrite(const char* format, ...)
 #endif
 }
 
-#define S_DEBUG0(format) //swrite(format)
-#define S_DEBUG1(format, args...) //swrite(format, args)
-#define S_DEBUG2(format, args...) //swrite(format, args)
+#define S_DEBUG0(format) swrite(format)
+#define S_DEBUG1(format, args...) swrite(format, args)
+#define S_DEBUG2(format, args...) swrite(format, args)
 // always
 #define S_DEBUG_A0(format) swrite(format)
 #define S_DEBUG_A(format, args...) swrite(format, args)
@@ -48,37 +48,16 @@ unsigned long long ptr(void * ptr) {
     return (unsigned long long)ptr;
 }
 
-inline std::size_t get_page_size() {
+inline std::size_t getCpuPageSize() {
     static const std::size_t nbytes = sysconf(_SC_PAGESIZE);
     return nbytes;
 };
 
-struct PPage {
-    int fd_;
-    size_t offset_;
-    char* ptr_;
-};
-
-class PMemoryManager {
-public:
-    PMemoryManager(size_t pagesCnt);
-    std::shared_ptr<PPage> alloc();
-    void free(std::shared_ptr<PPage> page);
-
-private:
-    char* base_;
-    size_t size_;
-    std::vector<std::shared_ptr<PPage>> freePages_;
-    int fd_;
-
-    PMemoryManager(const gu::PMemoryManager&);
-    PMemoryManager operator=(const gu::PMemoryManager&);
-};
 
 void EncMMap::mprotectd(void *ptr, size_t size, int prot) const {
     S_DEBUG1("mprotect ptr: x%llX, size: %ld, prot: %d\n",
       (unsigned long long)ptr, size, prot);
-    if (0 != mprotect(ptr, get_page_size(), prot)) {
+    if (0 != mprotect(ptr, size, prot)) {
         S_DEBUG1("mprotect failed. errno: %d, msg: %s\n", errno, strerror(errno));
     }
     (page2protection_.get())[page_number((char*)ptr)] = prot;
@@ -120,25 +99,68 @@ int make_temp_file(off_t size)
 
 
 
-PMemoryManager::PMemoryManager(size_t pagesCnt)
+PMemoryManager::PMemoryManager(size_t size, size_t allocPageSize)
 : base_(0)
 , size_(0)
 , freePages_()
-, fd_(-1) {
-    size_t page_size = get_page_size();
-    size_ = pagesCnt * page_size;
+, fd_(-1)
+, mapped_(false)
+, allocPagesCnt_(0) {
+    // maximum 512 alloc pages
+    static const int ALLOC_PAGES_MAX = 512;
+
+    // allocPageSize has to be Cpu page aligned
+    if (allocPageSize % getCpuPageSize()) {
+        S_DEBUG_A("PMemoryManager::PMemoryManager() allocPageSize not aligned %ld\n", allocPageSize);
+        gu_throw_error(errno) << "PMemoryManager::PMemoryManager() allocPageSize not aligned";
+    }
+
+    // how many pages do we need to satisfy size?
+    allocPagesCnt_ = size / allocPageSize;
+    if (size % allocPageSize) {
+        // KH: todo: how should we handle not full page at the end when flushing?
+        S_DEBUG_A("PMemoryManager::PMemoryManager() adding page, size not aligned to allocation unit: %ld\n", size);
+        allocPagesCnt_++;
+    }
+    allocPagesCnt_ = allocPagesCnt_ < ALLOC_PAGES_MAX ? allocPagesCnt_ : ALLOC_PAGES_MAX;
+
+    size_ = allocPagesCnt_ * allocPageSize;
     fd_ = make_temp_file(size_);
     base_ = static_cast<char*>(mmap(nullptr, size_, PROT_READ|PROT_WRITE, MAP_SHARED, fd_, 0));
+    mapped_ = (base_ != MAP_FAILED);
+    if (!mapped_)
+    {
+        gu_throw_error(errno) << "PMemoryManager::PMemoryManager() mmap() failed";
+    }
     mlock(base_, size_);
-    S_DEBUG_A("PMemoryManager::PMemoryManager() (x%llX - x%llX)\n",
-      (unsigned long long)base_, (unsigned long long)base_ + size_);
-    for (size_t i = 0; i < pagesCnt; ++i) {
+    S_DEBUG_A("PMemoryManager::PMemoryManager() (x%llX - x%llX). "
+              "CpuPageSize: %ld, allocPageSize: %ld, allocPagesCnt: %ld\n",
+      (unsigned long long)base_, (unsigned long long)base_ + size_,
+      getCpuPageSize(), allocPageSize, allocPagesCnt_);
+
+    for (size_t i = 0; i < allocPagesCnt_; ++i) {
         auto page = std::make_shared<PPage>();
         page->fd_ = fd_;
-        page->offset_ = i*get_page_size();
+        page->offset_ = i*allocPageSize;
         page->ptr_ = base_ + page->offset_;
-        freePages_.push_back(page);
+        freePages_.push(page);
     }
+}
+
+PMemoryManager::~PMemoryManager() {
+    S_DEBUG_A("PMemoryManager::~PMemoryManager() (x%llX - x%llX)\n",
+      (unsigned long long)base_, (unsigned long long)base_ + size_);
+
+    if (freePages_.size() != allocPagesCnt_) {
+        S_DEBUG_A("Some pages still allocated. Free pages cnt: %d\n", freePages_.size());
+    }
+
+    if (mapped_) {
+        if (munmap (base_, size_) < 0) {
+            S_DEBUG_A0("unmap failed");
+        }
+    }
+    mapped_ = false;
 }
 
 std::shared_ptr<PPage> PMemoryManager::alloc() {
@@ -148,13 +170,13 @@ std::shared_ptr<PPage> PMemoryManager::alloc() {
         S_DEBUG0("PMemoryManager::alloc() no free pages\n");
         return std::shared_ptr<PPage>();
     }
-    auto p = freePages_.back();
-    freePages_.pop_back();
+    auto p = freePages_.front();
+    freePages_.pop();
     return p;
 }
 
 void PMemoryManager::free(std::shared_ptr<PPage> page) {
-    freePages_.push_back(page);
+    freePages_.push(page);
 }
 
 struct MemDescriptor {
@@ -163,7 +185,6 @@ struct MemDescriptor {
     size_t  size_;
 };
 
-static PMemoryManager memoryManager(512);
 
 // KH: some mutex around would be nice
 std::map<EncMMap*, MemDescriptor> encMMaps;
@@ -224,25 +245,36 @@ static void install_signal_handler() {
     }
 }
 
+// this is how many phisical pages will form 1 allocation unit
+static const int ALLOC_PAGE_MULTIPLIER = 4;
+// PMemoryManager allocation unit
+static size_t ALLOC_PAGE_SIZE = ALLOC_PAGE_MULTIPLIER * getCpuPageSize();
+
 EncMMap::EncMMap(const std::string& key, MMap &rawmmap)
 : key_(key)
 , mmapraw_(rawmmap)
-, ptr_(static_cast<char*>(mmap(nullptr, mmapraw_.get_size(), PROT_NONE, MAP_ANONYMOUS|MAP_PRIVATE, -1, 0)))
-, memoryManager_(memoryManager)
+, mmap_ptr_(static_cast<char*>(mmap(nullptr, mmapraw_.get_size() + ALLOC_PAGE_SIZE, PROT_NONE, MAP_ANONYMOUS|MAP_PRIVATE, -1, 0)))
+, base_(nullptr)
+, memoryManager_(mmapraw_.get_size(), ALLOC_PAGE_SIZE)
 , page2protection_()
 , vpage2ppage_()
 , pagesCnt_(0)
-, mapped_(ptr != MAP_FAILED) {
+, mapped_(mmap_ptr_ != MAP_FAILED) {
+
     if (!mapped_)
     {
         gu_throw_error(errno) << "EncMMap::EncMMap() mmap() on anonymous failed";
     }
+
+    // we need base_ to be aligned with ALLOC_PAGE_SIZE for easier calculations later
+    base_ = (char*)(((ptr(mmap_ptr_) + ALLOC_PAGE_SIZE) / ALLOC_PAGE_SIZE) * ALLOC_PAGE_SIZE);
+
     S_DEBUG_A("EncMMap::EncMMap() (x%llX - x%llX) (%ld bytes)\n",
-        (unsigned long long)ptr_, (unsigned long long)ptr_ + mmapraw_.get_size(), mmapraw_.get_size());
+        (unsigned long long)base_, (unsigned long long)base_ + mmapraw_.get_size(), mmapraw_.get_size());
     // install signal handler
     std::call_once(signal_handler_flag, install_signal_handler);
-    pagesCnt_ = mmapraw_.get_size()/get_page_size();
-    if (mmapraw_.get_size()%get_page_size()) {
+    pagesCnt_ = mmapraw_.get_size() / ALLOC_PAGE_SIZE;
+    if (mmapraw_.get_size() % ALLOC_PAGE_SIZE) {
         // KH: todo: how should we handle not full page at the end when flushing?
         S_DEBUG_A("EncMMap::EncMMap() adding page, size not aligned: %ld\n", mmapraw_.get_size());
         pagesCnt_++;
@@ -250,7 +282,7 @@ EncMMap::EncMMap(const std::string& key, MMap &rawmmap)
     S_DEBUG_A("EncMMap::EncMMap() allocated pages cnt: %ld\n", pagesCnt_);
     page2protection_ = std::shared_ptr<int>(new int[pagesCnt_], [](int *p) { delete[] p; });
     memset(page2protection_.get(), PROT_NONE, sizeof(int) * pagesCnt_);
-    addEncMMap(this, ptr_, mmapraw_.get_size());
+    addEncMMap(this, base_, mmapraw_.get_size());
 }
 
 EncMMap::~EncMMap() {
@@ -265,7 +297,7 @@ size_t EncMMap::get_size() const {
 }
 
 void* EncMMap::get_ptr() const {
-    return ptr_;
+    return base_;
 }
 
 void EncMMap::dont_need() const {
@@ -281,7 +313,7 @@ static size_t clear_header_size = 1024;
 void EncMMap::decrypt(char* dst, char* src, size_t size, int pageNumber) const {
 #if 1
     // header is not encrypted
-    size_t pageStartOffset = pageNumber * get_page_size();
+    size_t pageStartOffset = pageNumber * ALLOC_PAGE_SIZE;
     for (size_t i = 0; i < size; ++i) {
         if (pageStartOffset + i < clear_header_size) {
             *dst = *src;
@@ -311,15 +343,13 @@ void EncMMap::sync(void *addr, size_t length) const {
         char* vpageStart = (char*)kv->first;
 
         S_DEBUG1("sync pageNo: %d, prot: %d (x%llX - x%llX)\n",
-            pageNo, (page2protection_.get())[pageNo], (unsigned long long)vpageStart, (unsigned long long)vpageStart+get_page_size());
+            pageNo, (page2protection_.get())[pageNo], (unsigned long long)vpageStart, (unsigned long long)vpageStart+ALLOC_PAGE_SIZE);
 
         if(protection == (PROT_READ | PROT_WRITE)) {
             // flush
-            mprotectd(vpageStart, get_page_size(), PROT_READ);
-            char* dstPtr = (char*)mmapraw_.get_ptr() + pageNo*get_page_size();
-            encrypt(dstPtr, vpageStart, get_page_size(), pageNo);
-
-            //mprotectd(vpageStart, get_page_size(), PROT_READ | PROT_WRITE);
+            mprotectd(vpageStart, ALLOC_PAGE_SIZE, PROT_READ);
+            char* dstPtr = (char*)mmapraw_.get_ptr() + pageNo*ALLOC_PAGE_SIZE;
+            encrypt(dstPtr, vpageStart, ALLOC_PAGE_SIZE, pageNo);
             S_DEBUG0("    -> flushed\n");
         }
     }
@@ -333,37 +363,36 @@ void EncMMap::sync() const {
         int protection = (page2protection_.get())[pageNo];
         char* vpageStart = (char*)kv->first;
         S_DEBUG1("sync pageNo: %d, prot: %d (x%llX - x%llX)\n",
-            pageNo, (page2protection_.get())[pageNo], (unsigned long long)vpageStart, (unsigned long long)vpageStart+get_page_size());
+            pageNo, (page2protection_.get())[pageNo], (unsigned long long)vpageStart, (unsigned long long)vpageStart+ALLOC_PAGE_SIZE);
         if(protection == (PROT_READ | PROT_WRITE)) {
             // flush
-            mprotectd(vpageStart, get_page_size(), PROT_READ);
-            char* dstPtr = (char*)mmapraw_.get_ptr() + pageNo*get_page_size();
-            encrypt(dstPtr, vpageStart, get_page_size(), pageNo);
-            //mprotectd(vpageStart, get_page_size(), PROT_READ | PROT_WRITE);
+            mprotectd(vpageStart, ALLOC_PAGE_SIZE, PROT_READ);
+            char* dstPtr = (char*)mmapraw_.get_ptr() + pageNo*ALLOC_PAGE_SIZE;
+            encrypt(dstPtr, vpageStart, ALLOC_PAGE_SIZE, pageNo);
             S_DEBUG0("    -> flushed\n");
         }
     }
     // sync the underlaying file
-    mmapraw_.sync(ptr_, get_size());
+    mmapraw_.sync(base_, get_size());
 }
 
 void EncMMap::unmap() {
     sync();
 
-    if (munmap (ptr_, get_size()) < 0)
+    if (munmap (mmap_ptr_, get_size() + ALLOC_PAGE_SIZE) < 0)
     {
         gu_throw_error(errno) << "munmap(" << ptr << ", " << get_size()
                                 << ") failed";
     }
-
+    base_ = nullptr;
     mapped_ = false;
 
     S_DEBUG_A("EncMMap::unmap() (x%llX - x%llX) (%ld bytes)\n",
-        (unsigned long long)ptr_, (unsigned long long)ptr_ + mmapraw_.get_size(), mmapraw_.get_size());
+        (unsigned long long)base_, (unsigned long long)base_ + mmapraw_.get_size(), mmapraw_.get_size());
 }
 
 char* EncMMap::page_start(char* addr) const {
-    static size_t page_size = get_page_size();
+    static size_t page_size = ALLOC_PAGE_SIZE;
 
     unsigned long long addr_u = ptr(addr);
     unsigned long long page_start = (addr_u / page_size) * page_size;
@@ -372,8 +401,8 @@ char* EncMMap::page_start(char* addr) const {
 
 unsigned long long EncMMap::page_number(char* addr) const {
     char* pstart = page_start(addr);
-    unsigned long long offset = ptr(pstart) - ptr(ptr_);
-    unsigned long long pageNo = offset / get_page_size();
+    unsigned long long offset = ptr(pstart) - ptr(base_);
+    unsigned long long pageNo = offset / ALLOC_PAGE_SIZE;
     return pageNo;
 }
 
@@ -404,7 +433,7 @@ void EncMMap::handle_signal(siginfo_t* info) {
     unsigned long long reqPageNo = page_number(p);
     char* reqPageStart = page_start(p);
     S_DEBUG1("(x%llX) reqPageNo: %llu, prot: %d, (x%llX - x%llX)\n",
-      (unsigned long long)p, reqPageNo, (page2protection_.get())[reqPageNo], (unsigned long long)reqPageStart, (unsigned long long)reqPageStart+get_page_size());
+      (unsigned long long)p, reqPageNo, (page2protection_.get())[reqPageNo], (unsigned long long)reqPageStart, (unsigned long long)reqPageStart+ALLOC_PAGE_SIZE);
 
     if ((page2protection_.get())[reqPageNo] == PROT_NONE) {
         // page is not mapped. Find free one
@@ -423,24 +452,16 @@ void EncMMap::handle_signal(siginfo_t* info) {
                 int protection = (page2protection_.get())[pageNo];
                 vpageStart = (char*)kv->first;
                 S_DEBUG1("free pageNo: %d, prot: %d (x%llX - x%llX)\n",
-                  pageNo, (page2protection_.get())[pageNo], (unsigned long long)vpageStart, (unsigned long long)vpageStart+get_page_size());
+                  pageNo, (page2protection_.get())[pageNo], (unsigned long long)vpageStart, (unsigned long long)vpageStart+ALLOC_PAGE_SIZE);
                 if(protection == (PROT_READ | PROT_WRITE)) {
                     // flush
-                    char* dstPtr = (char*)mmapraw_.get_ptr() + pageNo*get_page_size();
-                    mprotectd(vpageStart, get_page_size(), PROT_READ);
-                    encrypt(dstPtr, vpageStart, get_page_size(), pageNo);
-                    //memcpy(dstPtr, vpageStart, get_page_size());
-
+                    char* dstPtr = (char*)mmapraw_.get_ptr() + pageNo*ALLOC_PAGE_SIZE;
+                    mprotectd(vpageStart, ALLOC_PAGE_SIZE, PROT_READ);
+                    encrypt(dstPtr, vpageStart, ALLOC_PAGE_SIZE, pageNo);
                     S_DEBUG0("    -> flushed\n");
                 }
-#if 0
-                mprotectd(vpageStart, get_page_size(), PROT_WRITE);
-                memset(vpageStart, 0x11, get_page_size());
-                memset(kv->second->ptr_, 0xFF, get_page_size());
-#endif
-                //mprotectd(vpageStart, get_page_size(), PROT_NONE);
-                //munmap(vpageStart, get_page_size());
-                if (mmap(vpageStart, get_page_size(), PROT_NONE,
+
+                if (mmap(vpageStart, ALLOC_PAGE_SIZE, PROT_NONE,
                     MAP_ANONYMOUS|MAP_PRIVATE|MAP_FIXED, -1, 0) == MAP_FAILED) {
                     S_DEBUG0("unmap failed!");
                 }
@@ -452,25 +473,17 @@ void EncMMap::handle_signal(siginfo_t* info) {
             }
             p = memoryManager_.alloc();
         }
-#if 1
-        char* srcPtr = (char*)mmapraw_.get_ptr() + reqPageNo*get_page_size();
-        decrypt(p->ptr_, srcPtr, get_page_size(), reqPageNo);
-        mmap(reqPageStart, get_page_size(), PROT_READ, MAP_SHARED|MAP_FIXED, p->fd_, p->offset_);
-#else
-        // map the new one.
-        mmap(reqPageStart, get_page_size(), PROT_WRITE, MAP_SHARED|MAP_FIXED, p->fd_, p->offset_);
-        // populate the cache (decryption happens here)
-        char* srcPtr = (char*)mmapraw_.get_ptr() + reqPageNo*get_page_size();
-        decrypt(reqPageStart, srcPtr, get_page_size(), reqPageNo);
-        //memcpy(reqPageStart, srcPtr, get_page_size());
-        mprotectd(reqPageStart, get_page_size(), PROT_READ);
-#endif
+
+        char* srcPtr = (char*)mmapraw_.get_ptr() + reqPageNo*ALLOC_PAGE_SIZE;
+        decrypt(p->ptr_, srcPtr, ALLOC_PAGE_SIZE, reqPageNo);
+        mmap(reqPageStart, ALLOC_PAGE_SIZE, PROT_READ, MAP_SHARED|MAP_FIXED, p->fd_, p->offset_);
+
         (page2protection_.get())[reqPageNo] = PROT_READ;
         vpage2ppage_[reqPageStart] = p;
         S_DEBUG1("reqPageNo: %d PROT_NONE -> PROT_READ\n", reqPageNo);
     } else if ((page2protection_.get())[reqPageNo] == PROT_READ) {
         // page is mapped, just mark is as dirty
-        mprotectd(reqPageStart, get_page_size(), PROT_READ | PROT_WRITE);
+        mprotectd(reqPageStart, ALLOC_PAGE_SIZE, PROT_READ | PROT_WRITE);
         S_DEBUG1("reqPageNo: %d PROT_READ -> PROT_READ | PROT_WRITE\n", reqPageNo);
     }
     S_DEBUG0("handle_signal <<<<<<<<<\n");

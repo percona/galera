@@ -2,7 +2,7 @@
 #define __GCACHE_MMAPENC__
 
 #include <signal.h>
-#include <vector>
+#include <queue>
 #include <string>
 #include <memory>
 #include <map>
@@ -14,6 +14,32 @@ class PPage;
 class PMemoryManager;
 
 void dumpMappings();
+
+
+struct PPage {
+    int fd_;
+    size_t offset_;
+    char* ptr_;
+};
+
+class PMemoryManager {
+public:
+    PMemoryManager(size_t pagesCnt, size_t allocPageSize);
+    ~PMemoryManager();
+    std::shared_ptr<PPage> alloc();
+    void free(std::shared_ptr<PPage> page);
+
+private:
+    char* base_;
+    size_t size_;
+    std::queue<std::shared_ptr<PPage>> freePages_;
+    int fd_;
+    bool mapped_;
+    size_t allocPagesCnt_;
+
+    PMemoryManager(const gu::PMemoryManager&);
+    PMemoryManager operator=(const gu::PMemoryManager&);
+};
 
 class EncMMap : public IMMap
 {
@@ -36,8 +62,9 @@ private:
     void dumpMappingsInt();
     std::string key_;
     MMap& mmapraw_;
-    char* ptr_;
-    PMemoryManager &memoryManager_;
+    char* mmap_ptr_;
+    char* base_;
+    PMemoryManager memoryManager_;
     std::shared_ptr<int> page2protection_;
     std::map<void*, std::shared_ptr<PPage>> vpage2ppage_;
     size_t pagesCnt_;
