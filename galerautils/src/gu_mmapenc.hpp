@@ -70,6 +70,7 @@ private:
     size_t pagesCnt_;
     bool mapped_;
 
+    char* page_start(unsigned long long pageNo) const;
     char* page_start(char* addr) const;
     unsigned long long page_number(char* addr) const;
     void mprotectd(void *ptr, size_t size, int prot) const;

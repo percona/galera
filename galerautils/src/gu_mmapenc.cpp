@@ -37,9 +37,9 @@ static void swrite(const char* format, ...)
 #endif
 }
 
-#define S_DEBUG0(format) swrite(format)
-#define S_DEBUG1(format, args...) swrite(format, args)
-#define S_DEBUG2(format, args...) swrite(format, args)
+#define S_DEBUG0(format) //swrite(format)
+#define S_DEBUG1(format, args...) //swrite(format, args)
+#define S_DEBUG2(format, args...) //swrite(format, args)
 // always
 #define S_DEBUG_A0(format) swrite(format)
 #define S_DEBUG_A(format, args...) swrite(format, args)
@@ -381,7 +381,7 @@ void EncMMap::unmap() {
 
     if (munmap (mmap_ptr_, get_size() + ALLOC_PAGE_SIZE) < 0)
     {
-        gu_throw_error(errno) << "munmap(" << ptr << ", " << get_size()
+        gu_throw_error(errno) << "munmap(" << ptr(mmap_ptr_) << ", " << get_size()
                                 << ") failed";
     }
     base_ = nullptr;
@@ -389,6 +389,10 @@ void EncMMap::unmap() {
 
     S_DEBUG_A("EncMMap::unmap() (x%llX - x%llX) (%ld bytes)\n",
         (unsigned long long)base_, (unsigned long long)base_ + mmapraw_.get_size(), mmapraw_.get_size());
+}
+
+char* EncMMap::page_start(unsigned long long pageNo) const {
+    return base_ + ALLOC_PAGE_SIZE * pageNo;
 }
 
 char* EncMMap::page_start(char* addr) const {
@@ -474,6 +478,7 @@ void EncMMap::handle_signal(siginfo_t* info) {
             p = memoryManager_.alloc();
         }
 
+        // this page
         char* srcPtr = (char*)mmapraw_.get_ptr() + reqPageNo*ALLOC_PAGE_SIZE;
         decrypt(p->ptr_, srcPtr, ALLOC_PAGE_SIZE, reqPageNo);
         mmap(reqPageStart, ALLOC_PAGE_SIZE, PROT_READ, MAP_SHARED|MAP_FIXED, p->fd_, p->offset_);
@@ -481,6 +486,36 @@ void EncMMap::handle_signal(siginfo_t* info) {
         (page2protection_.get())[reqPageNo] = PROT_READ;
         vpage2ppage_[reqPageStart] = p;
         S_DEBUG1("reqPageNo: %d PROT_NONE -> PROT_READ\n", reqPageNo);
+
+        // read ahead
+        static size_t READ_AHEAD_CNT = 32; // how many pages should we read ahead
+        size_t totalReadAhead = 0;
+        for (size_t i = 0; i < READ_AHEAD_CNT; ++i) {
+            reqPageNo = reqPageNo+1 < pagesCnt_ ? reqPageNo+1 : 0;
+            // only not mapped pages
+            if ((page2protection_.get())[reqPageNo] != PROT_NONE) {
+                S_DEBUG_A("read ahead reqPageNo: %d already mapped. prot: %d\n",
+                  reqPageNo, (page2protection_.get())[reqPageNo]);
+                continue;
+            }
+            p = memoryManager_.alloc();
+            if (!p) {
+                // keep it simple for now. No swaping when read ahead.
+                S_DEBUG_A("read ahead reqPageNo: %d no free pages\n",
+                  reqPageNo);
+                break;
+            }
+            char* srcPtr = (char*)mmapraw_.get_ptr() + reqPageNo*ALLOC_PAGE_SIZE;
+            decrypt(p->ptr_, srcPtr, ALLOC_PAGE_SIZE, reqPageNo);
+            reqPageStart = page_start(reqPageNo);
+            mmap(reqPageStart, ALLOC_PAGE_SIZE, PROT_READ, MAP_SHARED|MAP_FIXED, p->fd_, p->offset_);
+
+            (page2protection_.get())[reqPageNo] = PROT_READ;
+            vpage2ppage_[reqPageStart] = p;
+            totalReadAhead++;
+            S_DEBUG1("read ahead reqPageNo: %d PROT_NONE -> PROT_READ\n", reqPageNo);
+        }
+        S_DEBUG_A("Read ahead %ld pages\n", totalReadAhead);
     } else if ((page2protection_.get())[reqPageNo] == PROT_READ) {
         // page is mapped, just mark is as dirty
         mprotectd(reqPageStart, ALLOC_PAGE_SIZE, PROT_READ | PROT_WRITE);
