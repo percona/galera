@@ -231,28 +231,33 @@ EncMMap::EncMMap(const std::string& key, MMap &rawmmap)
 , memoryManager_(memoryManager)
 , page2protection_()
 , vpage2ppage_()
-, pagesCnt_(0) {
-    if (ptr_ == MAP_FAILED)
+, pagesCnt_(0)
+, mapped_(ptr != MAP_FAILED) {
+    if (!mapped_)
     {
         gu_throw_error(errno) << "EncMMap::EncMMap() mmap() on anonymous failed";
     }
-    S_DEBUG_A("EncMMap::EncMMap() (x%llX - x%llX)\n",
-        (unsigned long long)ptr_, (unsigned long long)ptr_ + mmapraw_.get_size());
+    S_DEBUG_A("EncMMap::EncMMap() (x%llX - x%llX) (%ld bytes)\n",
+        (unsigned long long)ptr_, (unsigned long long)ptr_ + mmapraw_.get_size(), mmapraw_.get_size());
     // install signal handler
     std::call_once(signal_handler_flag, install_signal_handler);
     pagesCnt_ = mmapraw_.get_size()/get_page_size();
     if (mmapraw_.get_size()%get_page_size()) {
-        log_debug << "EncMMap::EncMMap() adding page, size not aligned: " << mmapraw_.get_size();
+        // KH: todo: how should we handle not full page at the end when flushing?
+        S_DEBUG_A("EncMMap::EncMMap() adding page, size not aligned: %ld\n", mmapraw_.get_size());
         pagesCnt_++;
     }
-    log_debug << "EncMMap::EncMMap() allocated pages cnt: " << pagesCnt_;
+    S_DEBUG_A("EncMMap::EncMMap() allocated pages cnt: %ld\n", pagesCnt_);
     page2protection_ = std::shared_ptr<int>(new int[pagesCnt_], [](int *p) { delete[] p; });
-    memset(page2protection_.get(), PROT_NONE, pagesCnt_);
+    memset(page2protection_.get(), PROT_NONE, sizeof(int) * pagesCnt_);
     addEncMMap(this, ptr_, mmapraw_.get_size());
 }
 
 EncMMap::~EncMMap() {
-    
+    if (mapped_)
+    {
+        try { unmap(); } catch (Exception& e) { log_error << e.what(); }
+    }
 }
 
 size_t EncMMap::get_size() const {
@@ -264,7 +269,7 @@ void* EncMMap::get_ptr() const {
 }
 
 void EncMMap::dont_need() const {
-    
+    mmapraw_.dont_need();
 }
 
 static char ENC_KEY = 0x4C;
@@ -343,7 +348,18 @@ void EncMMap::sync() const {
 }
 
 void EncMMap::unmap() {
-    
+    sync();
+
+    if (munmap (ptr_, get_size()) < 0)
+    {
+        gu_throw_error(errno) << "munmap(" << ptr << ", " << get_size()
+                                << ") failed";
+    }
+
+    mapped_ = false;
+
+    S_DEBUG_A("EncMMap::unmap() (x%llX - x%llX) (%ld bytes)\n",
+        (unsigned long long)ptr_, (unsigned long long)ptr_ + mmapraw_.get_size(), mmapraw_.get_size());
 }
 
 char* EncMMap::page_start(char* addr) const {

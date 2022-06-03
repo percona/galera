@@ -41,6 +41,7 @@ private:
     std::shared_ptr<int> page2protection_;
     std::map<void*, std::shared_ptr<PPage>> vpage2ppage_;
     size_t pagesCnt_;
+    bool mapped_;
 
     char* page_start(char* addr) const;
     unsigned long long page_number(char* addr) const;
