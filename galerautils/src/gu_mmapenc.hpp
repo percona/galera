@@ -36,6 +36,7 @@ private:
     int fd_;
     bool mapped_;
     size_t allocPagesCnt_;
+    size_t allocPageSize_;
 
     PMemoryManager(const gu::PMemoryManager&);
     PMemoryManager operator=(const gu::PMemoryManager&);
@@ -69,6 +70,7 @@ private:
     std::map<void*, std::shared_ptr<PPage>> vpage2ppage_;
     size_t pagesCnt_;
     bool mapped_;
+    size_t lastPageSize_;
 
     char* page_start(unsigned long long pageNo) const;
     char* page_start(char* addr) const;
