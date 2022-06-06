@@ -12,7 +12,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <cassert>
-#include <atomic>
+
 
 #define CLEAR_BUFFERS 0
 namespace gu {
@@ -250,16 +250,20 @@ struct sigaction oldsigact;
 static std::atomic_bool inside_handler(false);
 
 void signal_handler(int sig, siginfo_t* info, void* ctx) {
+#if 1
     bool expected = false;
     if (!inside_handler.compare_exchange_weak(expected, true)) {
-       // S_DEBUG_A0("signal_handler collision\n");
+        S_DEBUG_A0("signal_handler collision\n");
         return;
     }
     assert(inside_handler.load());
-
+#endif
     char *addr = static_cast<char*>(info->si_addr);
     EncMMap*  encmmap = getEncMMap(addr);
-
+#if 1
+    assert(inside_handler.load());
+    inside_handler.store(false);
+#endif
     if (encmmap == nullptr) {
         S_DEBUG0("calling old signal handler\n");
         if (oldsigact.sa_flags == SA_SIGINFO) {
@@ -271,10 +275,12 @@ void signal_handler(int sig, siginfo_t* info, void* ctx) {
     }
 
     // this is our region. Dispatch to the proper EncMMap object.
+    if (!encmmap->lock()) {
+        S_DEBUG_A0("encmmap collision\n");
+        return;
+    }
     encmmap->handle_signal(info);
-
-    assert(inside_handler.load());
-    inside_handler.store(false);
+    encmmap->unlock();
 }
 
 static void install_signal_handler() {
@@ -309,7 +315,8 @@ EncMMap::EncMMap(const std::string& key, MMap &rawmmap, size_t encryptionStartOf
 , mapped_(mmap_ptr_ != MAP_FAILED)
 , lastPageSize_(ALLOC_PAGE_SIZE)
 , encryptionStartOffset_(encryptionStartOffset)
-, defaultPageProtection_(PROT_READ | PROT_WRITE) {
+, defaultPageProtection_(PROT_READ | PROT_WRITE)
+, locked_(false) {
 
     if (!mapped_)
     {
@@ -350,6 +357,16 @@ EncMMap::~EncMMap() {
     delEncMMap(this);
 }
 
+bool EncMMap::lock() {
+    bool expected = false;
+    return locked_.compare_exchange_weak(expected, true);
+}
+
+void EncMMap::unlock() {
+    assert(locked_.load());
+    locked_.store(false);
+}
+
 size_t EncMMap::get_size() const {
     return mmapraw_.get_size();
 }
@@ -369,7 +386,7 @@ void EncMMap::encrypt(char* dst, char* src, size_t size, int pageNumber) const {
 void EncMMap::decrypt(char* dst, char* src, size_t size, int pageNumber) const {
     // the last page may be not full
     size = (pageNumber == pagesCnt_-1) ? lastPageSize_ : size;
-#if 1
+#if 0
     size_t pageStartOffset = pageNumber * ALLOC_PAGE_SIZE;
 
     size_t i = 0;
@@ -423,6 +440,7 @@ void EncMMap::sync(void *addr, size_t length) const {
             char* dstPtr = (char*)mmapraw_.get_ptr() + pageNo*ALLOC_PAGE_SIZE;
             encrypt(dstPtr, vpageStart, ALLOC_PAGE_SIZE, pageNo);
             S_DEBUG0("    -> flushed\n");
+            mprotectd(vpageStart, ALLOC_PAGE_SIZE, defaultPageProtection_);
         }
     }
     // sync the underlaying file
@@ -443,6 +461,7 @@ void EncMMap::sync() const {
             char* dstPtr = (char*)mmapraw_.get_ptr() + pageNo*ALLOC_PAGE_SIZE;
             encrypt(dstPtr, vpageStart, ALLOC_PAGE_SIZE, pageNo);
             S_DEBUG0("    -> flushed\n");
+            mprotectd(vpageStart, ALLOC_PAGE_SIZE, defaultPageProtection_);
         }
     }
     // sync the underlaying file
@@ -450,12 +469,13 @@ void EncMMap::sync() const {
 }
 
 void EncMMap::unmap() {
+#if 1
     sync();
     for (auto p : vpage2ppage_) {
         memoryManager_.free(p.second);
     }
     vpage2ppage_.clear();
-
+#endif
     if (munmap (mmap_ptr_, get_size() + ALLOC_PAGE_SIZE) < 0)
     {
         gu_throw_error(errno) << "munmap(" << ptr(mmap_ptr_) << ", " << get_size()
@@ -576,12 +596,12 @@ void EncMMap::handle_signal(siginfo_t* info) {
         // make it visible through the file
         //msync(p->ptr_, ALLOC_PAGE_SIZE, MS_SYNC);
 
-        if(MAP_FAILED == mmap(reqPageStart, ALLOC_PAGE_SIZE, PROT_READ, MAP_SHARED|MAP_FIXED, p->fd_, p->offset_)) {
+        if(MAP_FAILED == mmap(reqPageStart, ALLOC_PAGE_SIZE, defaultPageProtection_, MAP_SHARED|MAP_FIXED, p->fd_, p->offset_)) {
            S_DEBUG0("mmap failed");
            assert(0); 
         }
 
-        (page2protection_.get())[reqPageNo] = PROT_READ;
+        (page2protection_.get())[reqPageNo] = defaultPageProtection_;
         vpage2ppage_[reqPageStart] = p;
         S_DEBUG1("read reqPageNo: %d (x%llX - x%llX) PROT_NONE -> PROT_READ\n",
             reqPageNo, (unsigned long long)reqPageStart,
@@ -612,8 +632,8 @@ void EncMMap::handle_signal(siginfo_t* info) {
             decrypt(p->ptr_, srcPtr, ALLOC_PAGE_SIZE, reqPageNo);
             reqPageStart = page_start(reqPageNo);
 
-            mmap(reqPageStart, ALLOC_PAGE_SIZE, PROT_READ, MAP_SHARED|MAP_FIXED, p->fd_, p->offset_);
-            (page2protection_.get())[reqPageNo] = PROT_READ;
+            mmap(reqPageStart, ALLOC_PAGE_SIZE, defaultPageProtection_, MAP_SHARED|MAP_FIXED, p->fd_, p->offset_);
+            (page2protection_.get())[reqPageNo] = defaultPageProtection_;
             vpage2ppage_[reqPageStart] = p;
             totalReadAhead++;
             S_DEBUG1("read ahead reqPageNo: %d (x%llX - x%llX) PROT_NONE -> PROT_READ\n",

@@ -6,6 +6,7 @@
 #include <string>
 #include <memory>
 #include <map>
+#include <atomic>
 #include "gu_mmap.hpp"
 
 namespace gu {
@@ -57,6 +58,10 @@ public:
     ~EncMMap();
 
     void handle_signal(siginfo_t*);
+
+    bool lock();
+    void unlock();
+
     static void dumpMappings();
 private:
     void encrypt(char* dst, char* src, size_t size, int pageNumber) const;
@@ -74,6 +79,7 @@ private:
     size_t lastPageSize_;
     size_t encryptionStartOffset_;
     int defaultPageProtection_;
+    std::atomic_bool locked_;
 
     char* page_start(unsigned long long pageNo) const;
     char* page_start(char* addr) const;
