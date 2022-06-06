@@ -28,9 +28,7 @@ public:
 
 class MMap : public IMMap
 {
-
 public:
-
     size_t const size;
     void*  const ptr;
     size_t get_size() const override { return size; }

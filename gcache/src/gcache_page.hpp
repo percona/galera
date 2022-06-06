@@ -16,6 +16,7 @@
 
 #include <string>
 #include <ostream>
+#include <memory>
 
 namespace gcache
 {
@@ -32,9 +33,9 @@ namespace gcache
 
         void  free    (BufferHeader* bh)
         {
-            assert(bh >= mmap_.ptr);
+            assert(bh >= mmap_.get_ptr());
             assert(static_cast<void*>(bh) <=
-                   (static_cast<uint8_t*>(mmap_.ptr) + mmap_.size -
+                   (static_cast<uint8_t*>(mmap_.get_ptr()) + mmap_.get_size() -
                     sizeof(BufferHeader)));
             assert(bh->size > 0);
             assert(bh->store == BUFFER_IN_PAGE);
@@ -48,7 +49,7 @@ namespace gcache
 
         void  repossess(BufferHeader* bh)
         {
-            assert(bh >= mmap_.ptr);
+            assert(bh >= mmap_.get_ptr());
             assert(reinterpret_cast<uint8_t*>(bh) + bh->size <= next_);
             assert(bh->size > 0);
             assert(bh->seqno_g != SEQNO_NONE);
@@ -96,7 +97,9 @@ namespace gcache
     private:
 
         gu::FileDescriptor fd_;
-        gu::MMap           mmap_;
+        gu::MMap           mmapraw_;
+        std::shared_ptr<gu::IMMap>  mmapptr_;  // just to keep mmap_
+        gu::IMMap&         mmap_;
         void* const        ps_;
         uint8_t*           next_;
         size_t             space_;

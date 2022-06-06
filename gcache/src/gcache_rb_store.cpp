@@ -90,7 +90,7 @@ namespace gcache
         mmapraw_   (fd_),
         // KH: here we need factory creating encrypted/not encrypted mmap
 #if 1
-        mmapptr_   (std::make_shared<gu::EncMMap>("testkey", mmapraw_)),
+        mmapptr_   (std::make_shared<gu::EncMMap>("testkey", mmapraw_, static_cast<size_t>(PREAMBLE_LEN))),
         mmap_      (*mmapptr_),
 #else
         mmapptr_   (nullptr),
@@ -906,7 +906,7 @@ namespace gcache
                     {
                         try
                         {
-                            fprintf(stderr, "KH: inserting: %ld,%ld, ptr: x%llX\n", seqno_g, bh->seqno_g, (unsigned long long)(bh+1));
+                            //fprintf(stderr, "KH: inserting: %ld,%ld, ptr: x%llX\n", seqno_g, bh->seqno_g, (unsigned long long)(bh+1));
                             seqno2ptr_.insert(seqno_g, bh + 1);
                         }
                         catch (std::exception& e)
@@ -1047,7 +1047,7 @@ namespace gcache
                                  seqno_t     const seqno)
     {
         const BufferHeader* const bh(ptr2BH(ptr));
-        fprintf(stderr, "KH: ptr: x%llX, seqno: %ld\n", (unsigned long long)ptr, bh->seqno_g);
+        //fprintf(stderr, "KH: ptr: x%llX, seqno: %ld\n", (unsigned long long)ptr, bh->seqno_g);
         if (bh->seqno_g != seqno)
         {
             assert(0);

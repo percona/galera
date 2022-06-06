@@ -10,6 +10,7 @@
 #include "gu_assert.hpp"
 #include "gu_arch.h"
 #include "gu_limits.h"
+#include "gu_mmapenc.hpp"
 
 #include <sstream>
 #include <iomanip> // for std::setfill() and std::setw()
@@ -60,12 +61,20 @@ gu::Allocator::FilePage::FilePage (const std::string& name,
 #else
     fd_  (name, size, false, false),
 #endif /* PXC */
-    mmap_(fd_, true)
+        mmapraw_   (fd_),
+        // KH: here we need factory creating encrypted/not encrypted mmap
+#if 1
+        mmapptr_   (std::make_shared<gu::EncMMap>(gu::generateRandomKey(), mmapraw_)),
+        mmap_      (*mmapptr_)
+#else
+        mmapptr_   (nullptr),
+        mmap_      (mmapraw_)
+#endif
 {
-    base_ptr_ = static_cast<byte_t*>(mmap_.ptr);
+    base_ptr_ = static_cast<byte_t*>(mmap_.get_ptr());
     assert(0 == (uintptr_t(base_ptr_) % GU_WORD_BYTES));
     ptr_      = base_ptr_;
-    left_     = mmap_.size;
+    left_     = mmap_.get_size();
 }
 
 

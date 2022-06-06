@@ -15,6 +15,7 @@ class PMemoryManager;
 
 void dumpMappings();
 
+std::string generateRandomKey();
 
 struct PPage {
     int fd_;
@@ -45,7 +46,7 @@ private:
 class EncMMap : public IMMap
 {
 public:
-    EncMMap(const std::string &key, MMap &mmap);
+    EncMMap(const std::string &key, MMap &mmap, size_t encryptionStartOffset = 0);
     size_t get_size() const override;
     void*  get_ptr() const override;
 
@@ -71,6 +72,8 @@ private:
     size_t pagesCnt_;
     bool mapped_;
     size_t lastPageSize_;
+    size_t encryptionStartOffset_;
+    int defaultPageProtection_;
 
     char* page_start(unsigned long long pageNo) const;
     char* page_start(char* addr) const;

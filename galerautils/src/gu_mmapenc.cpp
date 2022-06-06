@@ -17,6 +17,11 @@
 #define CLEAR_BUFFERS 0
 namespace gu {
 
+std::string generateRandomKey() {
+    static int keyLength = 32;
+    return "01234567890123456789012345678901";
+}
+
 static void swrite(const char* format, ...)
 {
 #if 1
@@ -227,6 +232,10 @@ static void addEncMMap(EncMMap *mmap, char* ptr, size_t size) {
     encMMaps[mmap] = {ptr, ptr+size, size};
 }
 
+static void delEncMMap(EncMMap *mmap) {
+    encMMaps.erase(mmap);
+}
+
 static EncMMap* getEncMMap(char* ptr) {
     for (auto m : encMMaps) {
         if (ptr >= m.second.start_  &&  ptr < m.second.end_) {
@@ -242,7 +251,10 @@ static std::atomic_bool inside_handler(false);
 
 void signal_handler(int sig, siginfo_t* info, void* ctx) {
     bool expected = false;
-    if (!inside_handler.compare_exchange_weak(expected, true)) return;
+    if (!inside_handler.compare_exchange_weak(expected, true)) {
+       // S_DEBUG_A0("signal_handler collision\n");
+        return;
+    }
     assert(inside_handler.load());
 
     char *addr = static_cast<char*>(info->si_addr);
@@ -284,7 +296,7 @@ static const int ALLOC_PAGE_MULTIPLIER = 4;
 // PMemoryManager allocation unit
 static size_t ALLOC_PAGE_SIZE = ALLOC_PAGE_MULTIPLIER * getCpuPageSize();
 
-EncMMap::EncMMap(const std::string& key, MMap &rawmmap)
+EncMMap::EncMMap(const std::string& key, MMap &rawmmap, size_t encryptionStartOffset)
 : key_(key)
 , mmapraw_(rawmmap)
 // mmap 2 pages more: 1st for aligning start, 2nd if the last underlying page is not aligned
@@ -295,7 +307,9 @@ EncMMap::EncMMap(const std::string& key, MMap &rawmmap)
 , vpage2ppage_()
 , pagesCnt_(0)
 , mapped_(mmap_ptr_ != MAP_FAILED)
-, lastPageSize_(ALLOC_PAGE_SIZE) {
+, lastPageSize_(ALLOC_PAGE_SIZE)
+, encryptionStartOffset_(encryptionStartOffset)
+, defaultPageProtection_(PROT_READ | PROT_WRITE) {
 
     if (!mapped_)
     {
@@ -306,8 +320,8 @@ EncMMap::EncMMap(const std::string& key, MMap &rawmmap)
     // here we will loose at most 4k at the beginning
     base_ = (char*)(((ptr(mmap_ptr_) + ALLOC_PAGE_SIZE) / ALLOC_PAGE_SIZE) * ALLOC_PAGE_SIZE);
 
-    S_DEBUG_A("EncMMap::EncMMap() mmap_ptr: x%llX (x%llX - x%llX) (%ld bytes)\n",
-        ptr(mmap_ptr_), ptr(base_), ptr(base_) + mmapraw_.get_size(), mmapraw_.get_size());
+    S_DEBUG_A("EncMMap::EncMMap() this: x%llX, mmap_ptr: x%llX aligned mapping: (x%llX - x%llX) (%ld bytes)\n",
+        ptr(this), ptr(mmap_ptr_), ptr(base_), ptr(base_) + mmapraw_.get_size(), mmapraw_.get_size());
     // install signal handler
     std::call_once(signal_handler_flag, install_signal_handler);
     pagesCnt_ = mmapraw_.get_size() / ALLOC_PAGE_SIZE;
@@ -326,10 +340,14 @@ EncMMap::EncMMap(const std::string& key, MMap &rawmmap)
 }
 
 EncMMap::~EncMMap() {
+    S_DEBUG_A("EncMMap::!EncMMap() this: x%llX, mmap_ptr: x%llX aligned mapping: (x%llX - x%llX) (%ld bytes)\n",
+        ptr(this), ptr(mmap_ptr_), ptr(base_), ptr(base_) + mmapraw_.get_size(), mmapraw_.get_size());
     if (mapped_)
     {
         try { unmap(); } catch (Exception& e) { log_error << e.what(); }
     }
+
+    delEncMMap(this);
 }
 
 size_t EncMMap::get_size() const {
@@ -344,24 +362,30 @@ void EncMMap::dont_need() const {
     mmapraw_.dont_need();
 }
 
-static char ENC_KEY = 0x4C;
 void EncMMap::encrypt(char* dst, char* src, size_t size, int pageNumber) const {
     decrypt(dst, src, size, pageNumber);
 }
 
-static size_t clear_header_size = 1024;
 void EncMMap::decrypt(char* dst, char* src, size_t size, int pageNumber) const {
     // the last page may be not full
     size = (pageNumber == pagesCnt_-1) ? lastPageSize_ : size;
 #if 1
-    // header is not encrypted
     size_t pageStartOffset = pageNumber * ALLOC_PAGE_SIZE;
-    for (size_t i = 0; i < size; ++i) {
-        if (pageStartOffset + i < clear_header_size) {
+
+    size_t i = 0;
+    if (pageStartOffset < encryptionStartOffset_) {
+        size_t unencryptedSize = std::min(size, encryptionStartOffset_);
+        for (; i < unencryptedSize; ++i) {
             *dst = *src;
-        } else {
-            *dst = *src ^ ENC_KEY;
+            dst++;
+            src++;
         }
+    }
+
+    // normal encryption
+    char ENC_KEY = key_[0];
+    for (; i < size; ++i) {
+        *dst = *src ^ ENC_KEY;
         dst++;
         src++;
     }
@@ -427,17 +451,20 @@ void EncMMap::sync() const {
 
 void EncMMap::unmap() {
     sync();
+    for (auto p : vpage2ppage_) {
+        memoryManager_.free(p.second);
+    }
+    vpage2ppage_.clear();
 
     if (munmap (mmap_ptr_, get_size() + ALLOC_PAGE_SIZE) < 0)
     {
         gu_throw_error(errno) << "munmap(" << ptr(mmap_ptr_) << ", " << get_size()
                                 << ") failed";
     }
-    base_ = nullptr;
-    mapped_ = false;
-
     S_DEBUG_A("EncMMap::unmap() (x%llX - x%llX) (%ld bytes)\n",
         (unsigned long long)base_, (unsigned long long)base_ + mmapraw_.get_size(), mmapraw_.get_size());
+    base_ = nullptr;
+    mapped_ = false;
 }
 
 char* EncMMap::page_start(unsigned long long pageNo) const {
@@ -485,8 +512,14 @@ void EncMMap::handle_signal(siginfo_t* info) {
     char* p = static_cast<char*>(info->si_addr);
     unsigned long long reqPageNo = page_number(p);
     char* reqPageStart = page_start(p);
-    S_DEBUG1("(x%llX) reqPageNo: %llu, prot: %d, (x%llX - x%llX)\n",
-      (unsigned long long)p, reqPageNo, (page2protection_.get())[reqPageNo], (unsigned long long)reqPageStart, (unsigned long long)reqPageStart+ALLOC_PAGE_SIZE);
+
+    S_DEBUG1("this: x%llX, p: x%llX, reqPageNo: %llu, (x%llX - x%llX)\n",
+      ptr(this), ptr(p), reqPageNo, ptr(reqPageStart), ptr(reqPageStart)+ALLOC_PAGE_SIZE);
+
+    assert(reqPageNo < pagesCnt_);
+
+    S_DEBUG1("reqPageNo: %llu, prot: %d\n",
+      reqPageNo, (page2protection_.get())[reqPageNo]);
 
     if ((page2protection_.get())[reqPageNo] == PROT_NONE) {
         // page is not mapped. Find free one
@@ -555,7 +588,7 @@ void EncMMap::handle_signal(siginfo_t* info) {
             (unsigned long long)reqPageStart+ALLOC_PAGE_SIZE);
 
         // read ahead
-        static size_t READ_AHEAD_CNT = 0; // how many pages should we read ahead
+        static size_t READ_AHEAD_CNT = 100; // how many pages should we read ahead
         size_t totalReadAhead = 0;
         for (size_t i = 0; i < READ_AHEAD_CNT; ++i) {
             reqPageNo = reqPageNo+1 < pagesCnt_ ? reqPageNo+1 : 0;

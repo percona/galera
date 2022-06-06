@@ -19,6 +19,7 @@
 #include <cstdlib>     // realloc(), free()
 #include <string>
 #include <iostream>
+#include <memory>
 
 namespace gu
 {
@@ -129,7 +130,9 @@ private:
     private:
 
         FileDescriptor fd_;
-        MMap           mmap_;
+        gu::MMap           mmapraw_;
+        std::shared_ptr<gu::IMMap>  mmapptr_;  // just to keep mmap_
+        gu::IMMap&         mmap_;
     };
 
     class PageStore

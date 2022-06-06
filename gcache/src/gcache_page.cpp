@@ -6,6 +6,7 @@
 
 #include "gcache_page.hpp"
 #include "gcache_limits.hpp"
+#include "gu_mmapenc.hpp"
 
 #include <gu_throw.hpp>
 #include <gu_logger.hpp>
@@ -26,8 +27,8 @@ gcache::Page::reset ()
         abort();
     }
 
-    space_ = mmap_.size;
-    next_  = static_cast<uint8_t*>(mmap_.ptr);
+    space_ = mmap_.get_size();
+    next_  = static_cast<uint8_t*>(mmap_.get_ptr());
 
 #ifdef PXC
     BH_clear (reinterpret_cast<BufferHeader*>(next_));
@@ -66,13 +67,21 @@ gcache::Page::Page (void* ps, const std::string& name, size_t size, int dbg)
 #else
     fd_   (name, size, true, false),
 #endif /* PXC */
-    mmap_ (fd_),
+    mmapraw_   (fd_),
+    // KH: here we need factory creating encrypted/not encrypted mmap
+#if 1
+    mmapptr_   (std::make_shared<gu::EncMMap>(gu::generateRandomKey(), mmapraw_)),
+    mmap_      (*mmapptr_),
+#else
+    mmapptr_   (nullptr),
+    mmap_      (mmapraw_),
+#endif
     ps_   (ps),
-    next_ (static_cast<uint8_t*>(mmap_.ptr)),
-    space_(mmap_.size),
+    next_ (static_cast<uint8_t*>(mmap_.get_ptr())),
+    space_(mmap_.get_size()),
     used_ (0),
 #ifdef PXC
-    size_ (mmap_.size),
+    size_ (mmap_.get_size()),
     min_space_ (space_),
 #endif /* PXC */
     debug_(dbg)
@@ -116,7 +125,7 @@ gcache::Page::malloc (size_type size)
             assert (reinterpret_cast<uint8_t*>(bh + 1) < next_);
         }
 
-        assert (next_ <= static_cast<uint8_t*>(mmap_.ptr) + mmap_.size);
+        assert (next_ <= static_cast<uint8_t*>(mmap_.get_ptr()) + mmap_.get_size());
 
         if (debug_) { log_info << name() << " allocd " << bh; }
 #endif
@@ -127,7 +136,7 @@ gcache::Page::malloc (size_type size)
     {
         log_debug << "Failed to allocate " << size << " bytes, space left: "
                   << space_ << " bytes, total allocated: "
-                  << next_ - static_cast<uint8_t*>(mmap_.ptr);
+                  << next_ - static_cast<uint8_t*>(mmap_.get_ptr());
         return 0;
     }
 }
@@ -162,7 +171,7 @@ gcache::Page::realloc (void* ptr, size_type size)
                 assert (reinterpret_cast<uint8_t*>(bh + 1) < next_);
             }
 
-            assert (next_ <= static_cast<uint8_t*>(mmap_.ptr) + mmap_.size);
+            assert (next_ <= static_cast<uint8_t*>(mmap_.get_ptr()) + mmap_.get_size());
 #endif
 #else
             BH_clear (BH_cast(next_));
@@ -198,7 +207,7 @@ gcache::Page::realloc (void* ptr, size_type size)
 #ifdef PXC
 size_t gcache::Page::allocated_pool_size ()
 {
-    return mmap_.size - min_space_;
+    return mmap_.get_size() - min_space_;
 }
 #endif /* PXC */
 
@@ -210,7 +219,7 @@ void gcache::Page::print(std::ostream& os) const
     if (used_ > 0 && debug_ > 0)
     {
         bool was_released(true);
-        const uint8_t* const start(static_cast<uint8_t*>(mmap_.ptr));
+        const uint8_t* const start(static_cast<uint8_t*>(mmap_.get_ptr()));
         const uint8_t* p(start);
         assert(p != next_);
         while (p != next_)
