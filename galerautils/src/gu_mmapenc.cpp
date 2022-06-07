@@ -386,17 +386,15 @@ void EncMMap::encrypt(char* dst, char* src, size_t size, int pageNumber) const {
 void EncMMap::decrypt(char* dst, char* src, size_t size, int pageNumber) const {
     // the last page may be not full
     size = (pageNumber == pagesCnt_-1) ? lastPageSize_ : size;
-#if 0
+#if 1
     size_t pageStartOffset = pageNumber * ALLOC_PAGE_SIZE;
 
     size_t i = 0;
     if (pageStartOffset < encryptionStartOffset_) {
         size_t unencryptedSize = std::min(size, encryptionStartOffset_);
-        for (; i < unencryptedSize; ++i) {
-            *dst = *src;
-            dst++;
-            src++;
-        }
+        memcpy(dst, src, unencryptedSize);
+        dst += unencryptedSize;
+        src += unencryptedSize;
     }
 
     // normal encryption
