@@ -15,14 +15,36 @@
 #include <thread>
 
 
-#define CLEAR_BUFFERS 0
 namespace gu {
 
+unsigned long long ptr(void * ptr) {
+    return (unsigned long long)ptr;
+}
+
+inline std::size_t getCpuPageSize() {
+    static const std::size_t nbytes = sysconf(_SC_PAGESIZE);
+    return nbytes;
+};
 
 std::string generateRandomKey() {
     static int keyLength = 32;
     return "01234567890123456789012345678901";
 }
+
+
+#define CLEAR_BUFFERS 0
+#define REAL_ENCRYPTION 1
+
+// this is how many phisical pages will form 1 allocation unit
+static const int ALLOC_PAGE_MULTIPLIER = 8;
+// Page size:
+// 4 - 16k
+// 8 - 32k
+// PMemoryManager allocation unit
+static size_t ALLOC_PAGE_SIZE = ALLOC_PAGE_MULTIPLIER * getCpuPageSize(); // X * 4k
+
+static const size_t CACHE_ALLOC_PAGES_MAX = 512;  // X * 4k * 512
+
 
 static void swrite(const char* format, ...)
 {
@@ -59,14 +81,6 @@ static void swrite(const char* format, ...)
 #define S_DEBUG_A0(format) swrite(format)
 #define S_DEBUG_A(format, args...) swrite(format, args)
 
-unsigned long long ptr(void * ptr) {
-    return (unsigned long long)ptr;
-}
-
-inline std::size_t getCpuPageSize() {
-    static const std::size_t nbytes = sysconf(_SC_PAGESIZE);
-    return nbytes;
-};
 
 inline void dumpMemory(void *ptr, size_t size) {
     S_DEBUG1("DUMP START x%llX, size: %ld", (unsigned long long)ptr, size);
@@ -123,6 +137,48 @@ int make_temp_file(off_t size)
     return fd;
 }
 
+
+class PMemoryManagerManager {
+public:
+    PMemoryManagerManager(size_t size, size_t allocPageSize);
+    std::shared_ptr<PMemoryManager> allocate();
+    void free(std::shared_ptr<PMemoryManager>mgr);
+
+private:
+    std::mutex mtx_;
+    std::vector<std::shared_ptr<PMemoryManager>> managers_;
+    size_t size_;
+    size_t allocPageSize_;
+};
+
+PMemoryManagerManager::PMemoryManagerManager(size_t size, size_t allocPageSize)
+: size_(size)
+, allocPageSize_(allocPageSize) {
+
+}
+
+std::shared_ptr<PMemoryManager> PMemoryManagerManager::allocate() {
+    std::lock_guard<std::mutex> l(mtx_);
+    if (managers_.size() > 0) {
+        auto mgr = managers_.back();
+        managers_.pop_back();
+        S_DEBUG0("Reusing PMemoryManager\n");
+        return mgr;
+    }
+    S_DEBUG0("Creating new PMemoryManager\n");
+    auto mgr = std::make_shared<PMemoryManager>(size_, allocPageSize_);
+    return mgr;
+}
+
+void PMemoryManagerManager::free(std::shared_ptr<PMemoryManager>mgr) {
+    std::lock_guard<std::mutex> l(mtx_);
+    mgr->reset();
+    managers_.push_back(mgr);
+    S_DEBUG1("PMemoryManager returned to pool. Pool size: %d\n", managers_.size());
+}
+
+PMemoryManagerManager memoryManagerManager(512*ALLOC_PAGE_SIZE ,ALLOC_PAGE_SIZE);
+
 static const unsigned char FREE_PAGE_PATTERN = 0xAB;
 static const unsigned char ALLOCATED_PAGE_PATTERN = 0xED;
 
@@ -135,7 +191,7 @@ PMemoryManager::PMemoryManager(size_t size, size_t allocPageSize)
 , allocPagesCnt_(0)
 , allocPageSize_(allocPageSize) {
     // maximum 512 alloc pages
-    static const int ALLOC_PAGES_MAX = 512;
+    S_DEBUG_A0("+++PMemoryManager::PMemoryManager()\n");
 
     // allocPageSize has to be Cpu page aligned
     if (allocPageSize_ % getCpuPageSize()) {
@@ -150,7 +206,7 @@ PMemoryManager::PMemoryManager(size_t size, size_t allocPageSize)
         S_DEBUG_A("PMemoryManager::PMemoryManager() adding page, size not aligned to allocation unit: %ld\n", size);
         allocPagesCnt_++;
     }
-    allocPagesCnt_ = allocPagesCnt_ < ALLOC_PAGES_MAX ? allocPagesCnt_ : ALLOC_PAGES_MAX;
+    allocPagesCnt_ = allocPagesCnt_ < CACHE_ALLOC_PAGES_MAX ? allocPagesCnt_ : CACHE_ALLOC_PAGES_MAX;
 
     size_ = allocPagesCnt_ * allocPageSize_;
     fd_ = make_temp_file(size_);
@@ -177,12 +233,14 @@ PMemoryManager::PMemoryManager(size_t size, size_t allocPageSize)
         page->fd_ = fd_;
         page->offset_ = i*allocPageSize_;
         page->ptr_ = base_ + page->offset_;
-        freePages_.push(page);
+        myPages_.push_back(page);
     }
+    freePages_ = myPages_;
+    S_DEBUG_A0("---PMemoryManager::PMemoryManager()\n");
 }
 
 PMemoryManager::~PMemoryManager() {
-    S_DEBUG_A("PMemoryManager::~PMemoryManager() (x%llX - x%llX)\n",
+    S_DEBUG_A("+++PMemoryManager::~PMemoryManager() (x%llX - x%llX)\n",
       (unsigned long long)base_, (unsigned long long)base_ + size_);
 
     if (freePages_.size() != allocPagesCnt_) {
@@ -195,6 +253,8 @@ PMemoryManager::~PMemoryManager() {
         }
     }
     mapped_ = false;
+    S_DEBUG_A("---PMemoryManager::~PMemoryManager() (x%llX - x%llX)\n",
+      (unsigned long long)base_, (unsigned long long)base_ + size_);
 }
 
 std::shared_ptr<PPage> PMemoryManager::alloc() {
@@ -204,8 +264,8 @@ std::shared_ptr<PPage> PMemoryManager::alloc() {
         S_DEBUG0("PMemoryManager::alloc() no free pages\n");
         return std::shared_ptr<PPage>();
     }
-    auto p = freePages_.front();
-    freePages_.pop();
+    auto p = freePages_.back();
+    freePages_.pop_back();
 
 #if CLEAR_BUFFERS
     for(size_t i = 0; i < allocPageSize_; ++i){
@@ -223,7 +283,14 @@ void PMemoryManager::free(std::shared_ptr<PPage> page) {
 #if CLEAR_BUFFERS
     memset(page->ptr_, FREE_PAGE_PATTERN, allocPageSize_);
 #endif
-    freePages_.push(page);
+    freePages_.push_back(page);
+}
+
+void PMemoryManager::reset() {
+    if(myPages_.size() != freePages_.size()) {
+        // some pages were not released, restore clean state
+        freePages_ = myPages_;
+    }
 }
 
 struct MemDescriptor {
@@ -306,65 +373,6 @@ static void install_signal_handler() {
     }
 }
 
-// this is how many phisical pages will form 1 allocation unit
-static const int ALLOC_PAGE_MULTIPLIER = 4;
-// PMemoryManager allocation unit
-static size_t ALLOC_PAGE_SIZE = ALLOC_PAGE_MULTIPLIER * getCpuPageSize();
-
-#define REAL_ENCRYPTION 1
-
-Encryptor::Encryptor(unsigned char* key, unsigned char* iv,
-                     SafeQueue<encThdMsg>& queue, std::atomic_int& finishCounter)
-: finish_(false)
-, queue_(queue)
-, finishCounter_(finishCounter) {
-    encryptor_.open(key, iv);
-    std::thread thd([this]{thdFn();});
-    thd_.swap(thd);
-}
-
-Encryptor::~Encryptor() {
-    stop();
-    encryptor_.close();
-}
-
-void Encryptor::thdFn() {
-    S_DEBUG0("Encryptor::thdFn() >>>>\n");
-    while(!finish_) {
-        encThdMsg msg = queue_.dequeue();
-        S_DEBUG1("enc (x%llX - x%llX) >\n", ptr(msg.src_), ptr(msg.dst_));
-#if REAL_ENCRYPTION
-        size_t pageStartOffset = msg.pageNo_ * ALLOC_PAGE_SIZE;
-        size_t unencryptedSize = 0;
-        size_t i = 0;
-        static size_t encryptionStartOffset_ = 1024;
-        if (gu_unlikely(pageStartOffset < encryptionStartOffset_)) {
-            unencryptedSize = std::min(msg.size_, encryptionStartOffset_);
-            memcpy(msg.dst_, msg.src_, unencryptedSize);
-            msg.dst_ += unencryptedSize;
-            msg.src_ += unencryptedSize;
-        }
-
-        int encryptedSize = msg.size_ - unencryptedSize;
-        if(encryptedSize > 0) {
-        encryptor_.set_stream_offset(pageStartOffset + unencryptedSize);
-        encryptor_.encrypt((unsigned char*)msg.dst_, (unsigned char*)msg.src_, msg.size_ - unencryptedSize);
-        }
-#else
-        memcpy(msg.dst_, msg.src_, msg.size_);
-#endif
-        S_DEBUG1("enc (x%llX - x%llX) <\n", ptr(msg.src_), ptr(msg.dst_));
-        finishCounter_.fetch_sub(1);
-    }
-    S_DEBUG0("Encryptor::thdFn() <<<<\n");
-}
-
-void Encryptor::stop() {
-    finish_.store(true);
-    thd_.join();
-}
-
-
 
 EncMMap::EncMMap(const std::string& key, MMap &rawmmap, size_t encryptionStartOffset)
 : key_(key)
@@ -372,7 +380,8 @@ EncMMap::EncMMap(const std::string& key, MMap &rawmmap, size_t encryptionStartOf
 // mmap 2 pages more: 1st for aligning start, 2nd if the last underlying page is not aligned
 , mmap_ptr_(static_cast<char*>(mmap(nullptr, mmapraw_.get_size() + 2*ALLOC_PAGE_SIZE, PROT_NONE, MAP_ANONYMOUS|MAP_PRIVATE, -1, 0)))
 , base_(nullptr)
-, memoryManager_(mmapraw_.get_size(), ALLOC_PAGE_SIZE)
+, memoryManagerP_(memoryManagerManager.allocate())
+, memoryManager_(*memoryManagerP_)
 , page2protection_()
 , vpage2ppage_()
 , pagesCnt_(0)
@@ -380,8 +389,7 @@ EncMMap::EncMMap(const std::string& key, MMap &rawmmap, size_t encryptionStartOf
 , lastPageSize_(ALLOC_PAGE_SIZE)
 , encryptionStartOffset_(encryptionStartOffset)
 , defaultPageProtection_(PROT_READ | PROT_WRITE )
-, locked_(false)
-, encThreadFinishCounter_(0) {
+, locked_(false) {
 
     if (!mapped_)
     {
@@ -414,23 +422,12 @@ EncMMap::EncMMap(const std::string& key, MMap &rawmmap, size_t encryptionStartOf
 
     assert(key_.length() >= Aes_ctr_encryptor::FILE_KEY_LENGTH);
     const unsigned char *kkey = (const unsigned char*)key_.c_str();
-    //encryptor_.open(kkey, iv);
-    static unsigned char fkey[Aes_ctr_encryptor::FILE_KEY_LENGTH] =
-      {0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
-       0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
-       0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
-       0, 1};
-    static const int encryptorThdCnt = 10;
-    for (int i = 0; i < encryptorThdCnt; ++i) {
-        auto e = std::make_shared<Encryptor>(fkey, iv, encThreadQueue_, encThreadFinishCounter_);
-        encryptors_.push_back(e);
-    }
-
-    decryptor_.open(fkey, iv);
+    encryptor_.open(kkey, iv);
+    decryptor_.open(kkey, iv);
 }
 
 EncMMap::~EncMMap() {
-    S_DEBUG_A("EncMMap::!EncMMap() this: x%llX, mmap_ptr: x%llX aligned mapping: (x%llX - x%llX) (%ld bytes)\n",
+    S_DEBUG_A("EncMMap::~EncMMap() this: x%llX, mmap_ptr: x%llX aligned mapping: (x%llX - x%llX) (%ld bytes)\n",
         ptr(this), ptr(mmap_ptr_), ptr(base_), ptr(base_) + mmapraw_.get_size(), mmapraw_.get_size());
     if (mapped_)
     {
@@ -441,6 +438,7 @@ EncMMap::~EncMMap() {
 
     encryptor_.close();
     decryptor_.close();
+    memoryManagerManager.free(memoryManagerP_);
 }
 
 bool EncMMap::lock() {
@@ -571,7 +569,7 @@ void EncMMap::sync() const {
 }
 
 void EncMMap::unmap() {
-#if 1
+#if 0
     sync();
     for (auto p : vpage2ppage_) {
         memoryManager_.free(p.second);
@@ -636,7 +634,7 @@ struct PageGluer {
     int minPageNo_;
     int prevPageNo_;
     int gluedPages_;
-    static const int glueLimit_ = 10;
+    static const int glueLimit_ = 25;
 
     PageGluer(): src_(nullptr), dst_(nullptr), size_(0),
                  minPageNo_(-1), prevPageNo_(-1), gluedPages_(0) {}
@@ -696,7 +694,7 @@ void EncMMap::handle_signal(siginfo_t* info) {
             const static int LIMIT = 100;
             int limit = LIMIT;
             S_DEBUG1("freeing ppages. allocated: %d\n", vpage2ppage_.size());
-            encThreadFinishCounter_.store(0);
+
             PageGluer gluer;
             for (auto kv = vpage2ppage_.begin(); kv != vpage2ppage_.end(); ++kv) {
             //for (auto kv : vpage2ppage_) {
@@ -720,20 +718,9 @@ void EncMMap::handle_signal(siginfo_t* info) {
                     }
                     S_DEBUG0("not glued\n");
 
-                    encThdMsg msg;
-                    msg.dst_ = gluer.dst_;
-                    msg.src_ = gluer.src_;
-                    msg.size_ = gluer.size_;
-                    msg.pageNo_ = gluer.minPageNo_;
-                    encThreadFinishCounter_.fetch_add(1);
-                    encThreadQueue_.enqueue(msg);
+                    encrypt(gluer.dst_, gluer.src_, gluer.size_, gluer.minPageNo_);
                     gluer.reset();
                     gluer.glue(pageNo, vpageStart, dstPtr, pageSize);
-
-                    //std::thread t([this, dstPtr, vpageStart, pageNo] {encryptionThd(dstPtr, vpageStart, ALLOC_PAGE_SIZE, pageNo);} );
-                    //t.join();
-                    //encThreads.push_back(std::move(t));
-//                    encrypt(dstPtr, vpageStart, ALLOC_PAGE_SIZE, pageNo);
 
                     flushedCnt++;
                     S_DEBUG0("    -> flushed\n");
@@ -745,23 +732,11 @@ void EncMMap::handle_signal(siginfo_t* info) {
                 freedCout++;
                 if (--limit == 0) break;
             }
-            //for (auto &t : encThreads) {
-            //    t.join();
-            //}
+
             if (gluer.size_ > 0) {
-                encThdMsg msg;
-                msg.dst_ = gluer.dst_;
-                msg.src_ = gluer.src_;
-                msg.size_ = gluer.size_;
-                msg.pageNo_ = gluer.minPageNo_;
-                encThreadFinishCounter_.fetch_add(1);
-                encThreadQueue_.enqueue(msg);
+                encrypt(gluer.dst_, gluer.src_, gluer.size_, gluer.minPageNo_);
             }
 
-            while(encThreadFinishCounter_ > 0) {
-                // wait here somehow
-            }
-            S_DEBUG0("All enc threads finished\n");
             // do it again with the same limit, so we will free pages which were
             // synced above
             limit = LIMIT;
