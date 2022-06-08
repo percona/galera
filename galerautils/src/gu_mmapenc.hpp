@@ -8,6 +8,7 @@
 #include <map>
 #include <atomic>
 #include "gu_mmap.hpp"
+#include "enc_stream_cipher.h"
 
 namespace gu {
 
@@ -80,6 +81,10 @@ private:
     size_t encryptionStartOffset_;
     int defaultPageProtection_;
     std::atomic_bool locked_;
+    mutable Aes_ctr_encryptor encryptor_;
+    mutable Aes_ctr_decryptor decryptor_;
+
+    void encryptionThd(char* dst, char* src, size_t size, int pageNo);
 
     char* page_start(unsigned long long pageNo) const;
     char* page_start(char* addr) const;

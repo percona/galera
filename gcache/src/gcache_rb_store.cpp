@@ -90,7 +90,7 @@ namespace gcache
         mmapraw_   (fd_),
         // KH: here we need factory creating encrypted/not encrypted mmap
 #if 1
-        mmapptr_   (std::make_shared<gu::EncMMap>("testkey", mmapraw_, static_cast<size_t>(PREAMBLE_LEN))),
+        mmapptr_   (std::make_shared<gu::EncMMap>("01234567890123456789012345678901", mmapraw_, static_cast<size_t>(PREAMBLE_LEN))),
         mmap_      (*mmapptr_),
 #else
         mmapptr_   (nullptr),

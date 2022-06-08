@@ -12,6 +12,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <cassert>
+#include <thread>
 
 
 #define CLEAR_BUFFERS 0
@@ -259,6 +260,7 @@ void signal_handler(int sig, siginfo_t* info, void* ctx) {
     assert(inside_handler.load());
 #endif
     char *addr = static_cast<char*>(info->si_addr);
+//    S_DEBUG_A("addr: x%llX\n", ptr(addr));
     EncMMap*  encmmap = getEncMMap(addr);
 #if 1
     assert(inside_handler.load());
@@ -315,7 +317,7 @@ EncMMap::EncMMap(const std::string& key, MMap &rawmmap, size_t encryptionStartOf
 , mapped_(mmap_ptr_ != MAP_FAILED)
 , lastPageSize_(ALLOC_PAGE_SIZE)
 , encryptionStartOffset_(encryptionStartOffset)
-, defaultPageProtection_(PROT_READ | PROT_WRITE)
+, defaultPageProtection_(PROT_READ | PROT_WRITE )
 , locked_(false) {
 
     if (!mapped_)
@@ -344,6 +346,13 @@ EncMMap::EncMMap(const std::string& key, MMap &rawmmap, size_t encryptionStartOf
     page2protection_ = std::shared_ptr<int>(new int[pagesCnt_], [](int *p) { delete[] p; });
     memset(page2protection_.get(), PROT_NONE, sizeof(int) * pagesCnt_);
     addEncMMap(this, base_, mmapraw_.get_size());
+
+    static unsigned char iv[Aes_ctr_encryptor::AES_BLOCK_SIZE] = {0};
+
+    assert(key_.length() >= Aes_ctr_encryptor::FILE_KEY_LENGTH);
+    const unsigned char *kkey = (const unsigned char*)key_.c_str();
+    encryptor_.open(kkey, iv);
+    decryptor_.open(kkey, iv);
 }
 
 EncMMap::~EncMMap() {
@@ -355,6 +364,9 @@ EncMMap::~EncMMap() {
     }
 
     delEncMMap(this);
+
+    encryptor_.close();
+    decryptor_.close();
 }
 
 bool EncMMap::lock() {
@@ -378,48 +390,102 @@ void* EncMMap::get_ptr() const {
 void EncMMap::dont_need() const {
     mmapraw_.dont_need();
 }
-
+#define REAL_ENCRYPTION 1
 void EncMMap::encrypt(char* dst, char* src, size_t size, int pageNumber) const {
-    decrypt(dst, src, size, pageNumber);
-}
-
-void EncMMap::decrypt(char* dst, char* src, size_t size, int pageNumber) const {
     // the last page may be not full
     size = (pageNumber == pagesCnt_-1) ? lastPageSize_ : size;
-#if 1
+#if REAL_ENCRYPTION
     size_t pageStartOffset = pageNumber * ALLOC_PAGE_SIZE;
-
+    size_t unencryptedSize = 0;
     size_t i = 0;
-    if (pageStartOffset < encryptionStartOffset_) {
-        size_t unencryptedSize = std::min(size, encryptionStartOffset_);
+    if (gu_unlikely(pageStartOffset < encryptionStartOffset_)) {
+        unencryptedSize = std::min(size, encryptionStartOffset_);
         memcpy(dst, src, unencryptedSize);
         dst += unencryptedSize;
         src += unencryptedSize;
     }
 
-    // normal encryption
-    char ENC_KEY = key_[0];
-    for (; i < size; ++i) {
-        *dst = *src ^ ENC_KEY;
-        dst++;
-        src++;
+    int encryptedSize = size - unencryptedSize;
+    if(encryptedSize > 0) {
+      encryptor_.set_stream_offset(pageStartOffset + unencryptedSize);
+      encryptor_.encrypt((unsigned char*)dst, (unsigned char*)src, size - unencryptedSize);
     }
 #else
     memcpy(dst, src, size);
 #endif
 }
 
+void EncMMap::decrypt(char* dst, char* src, size_t size, int pageNumber) const {
+    // the last page may be not full
+    size = (pageNumber == pagesCnt_-1) ? lastPageSize_ : size;
+#if REAL_ENCRYPTION
+    size_t pageStartOffset = pageNumber * ALLOC_PAGE_SIZE;
+    size_t unencryptedSize = 0;
+    size_t i = 0;
+    if (gu_unlikely(pageStartOffset < encryptionStartOffset_)) {
+        unencryptedSize = std::min(size, encryptionStartOffset_);
+        memcpy(dst, src, unencryptedSize);
+        dst += unencryptedSize;
+        src += unencryptedSize;
+    }
+
+    int encryptedSize = size - unencryptedSize;
+    if(encryptedSize > 0) {
+        decryptor_.set_stream_offset(pageStartOffset + unencryptedSize);
+        decryptor_.decrypt((unsigned char*)dst, (unsigned char*)src, size - unencryptedSize);
+    }
+#else
+    memcpy(dst, src, size);
+#endif
+}
+
+void EncMMap::encryptionThd(char* dst, char* src, size_t size, int pageNumber) {
+    S_DEBUG0("EncMMap::encryptionThd >>>>\n");
+    size = (pageNumber == pagesCnt_-1) ? lastPageSize_ : size;
+#if REAL_ENCRYPTION
+    static unsigned char iv[Aes_ctr_encryptor::AES_BLOCK_SIZE] = {0};
+    static unsigned char key[Aes_ctr_encryptor::FILE_KEY_LENGTH] =
+      {0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
+       0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
+       0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
+       0, 1};
+
+    Aes_ctr_encryptor encryptor;
+    encryptor.open(key, iv);
+
+    size_t pageStartOffset = pageNumber * ALLOC_PAGE_SIZE;
+    size_t unencryptedSize = 0;
+    size_t i = 0;
+    if (gu_unlikely(pageStartOffset < encryptionStartOffset_)) {
+        unencryptedSize = std::min(size, encryptionStartOffset_);
+        memcpy(dst, src, unencryptedSize);
+        dst += unencryptedSize;
+        src += unencryptedSize;
+    }
+
+    int encryptedSize = size - unencryptedSize;
+    if(encryptedSize > 0) {
+      encryptor.set_stream_offset(pageStartOffset + unencryptedSize);
+      encryptor.encrypt((unsigned char*)dst, (unsigned char*)src, size - unencryptedSize);
+    }
+    encryptor.close();
+#else
+    memcpy(dst, src, size);
+#endif
+    S_DEBUG0("EncMMap::encryptionThd <<<<\n");
+}
+
 void EncMMap::sync(void *addr, size_t length) const {
     int firstPageToSync = page_number((char*)addr);
     char* vpageEnd = (char*)addr + length;
     int lastPageToSync = page_number(vpageEnd);
-    
+
     // calculate the real lenght to sync. It is pages bound
     char* syncAddrStart = page_start(firstPageToSync);
     char* syncAddrEnd = page_start(lastPageToSync) + ALLOC_PAGE_SIZE;
     size_t realSyncLen = syncAddrEnd - syncAddrStart;
     size_t syncStartOffset = base_ - (char*)addr;
-    
+
     for (auto kv = vpage2ppage_.begin(); kv != vpage2ppage_.end(); ++kv) {
         int pageNo = page_number((char*)kv->first);
         if(pageNo < firstPageToSync || pageNo > lastPageToSync) {
@@ -548,8 +614,9 @@ void EncMMap::handle_signal(siginfo_t* info) {
             // try to find read page over dirty page
             char *vpageStart = nullptr;
             // free N pages, no more
-            int limit = 100;
+            int limit = 10;
             S_DEBUG1("freeing ppages. allocated: %d\n", vpage2ppage_.size());
+            std::vector<std::thread> encThreads;
             for (auto kv = vpage2ppage_.begin(); kv != vpage2ppage_.end();) {
             //for (auto kv : vpage2ppage_) {
                 //S_DEBUG1("freeing ppages. allocated: %d\n", vpage2ppage_.size());
@@ -563,10 +630,10 @@ void EncMMap::handle_signal(siginfo_t* info) {
                     // flush
                     char* dstPtr = (char*)mmapraw_.get_ptr() + pageNo*ALLOC_PAGE_SIZE;
                     mprotectd(vpageStart, ALLOC_PAGE_SIZE, PROT_READ);
+//                    std::thread t([&] {encryptionThd(dstPtr, vpageStart, ALLOC_PAGE_SIZE, pageNo);} );
+//                    encThreads.push_back(std::move(t));
                     encrypt(dstPtr, vpageStart, ALLOC_PAGE_SIZE, pageNo);
-//                    if (msync(dstPtr, ALLOC_PAGE_SIZE, MS_SYNC)) {
-//                        assert(0);
-//                    }
+
                     flushedCnt++;
                     S_DEBUG0("    -> flushed\n");
                 }
@@ -582,6 +649,10 @@ void EncMMap::handle_signal(siginfo_t* info) {
                 freedCout++;
                 if (--limit == 0) break;
             }
+//            for (auto &t : encThreads) {
+//                t.join();
+//            }
+
             S_DEBUG1("flused/freed: %ld / %ld\n", flushedCnt, freedCout);
             p = memoryManager_.alloc();
             assert(p);
@@ -606,7 +677,7 @@ void EncMMap::handle_signal(siginfo_t* info) {
             (unsigned long long)reqPageStart+ALLOC_PAGE_SIZE);
 
         // read ahead
-        static size_t READ_AHEAD_CNT = 100; // how many pages should we read ahead
+        static size_t READ_AHEAD_CNT = 0; // how many pages should we read ahead
         size_t totalReadAhead = 0;
         for (size_t i = 0; i < READ_AHEAD_CNT; ++i) {
             reqPageNo = reqPageNo+1 < pagesCnt_ ? reqPageNo+1 : 0;
