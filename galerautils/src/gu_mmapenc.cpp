@@ -18,6 +18,7 @@
 #define CLEAR_BUFFERS 0
 namespace gu {
 
+
 std::string generateRandomKey() {
     static int keyLength = 32;
     return "01234567890123456789012345678901";
@@ -45,9 +46,15 @@ static void swrite(const char* format, ...)
 #endif
 }
 
-#define S_DEBUG0(format) //swrite(format)
-#define S_DEBUG1(format, args...) //swrite(format, args)
-#define S_DEBUG2(format, args...) //swrite(format, args)
+#if 1
+#define S_DEBUG0(format)
+#define S_DEBUG1(format, args...)
+#define S_DEBUG2(format, args...)
+#else
+#define S_DEBUG0(format) swrite(format)
+#define S_DEBUG1(format, args...) swrite(format, args)
+#define S_DEBUG2(format, args...) swrite(format, args)
+#endif
 // always
 #define S_DEBUG_A0(format) swrite(format)
 #define S_DEBUG_A(format, args...) swrite(format, args)
@@ -304,6 +311,61 @@ static const int ALLOC_PAGE_MULTIPLIER = 4;
 // PMemoryManager allocation unit
 static size_t ALLOC_PAGE_SIZE = ALLOC_PAGE_MULTIPLIER * getCpuPageSize();
 
+#define REAL_ENCRYPTION 1
+
+Encryptor::Encryptor(unsigned char* key, unsigned char* iv,
+                     SafeQueue<encThdMsg>& queue, std::atomic_int& finishCounter)
+: finish_(false)
+, queue_(queue)
+, finishCounter_(finishCounter) {
+    encryptor_.open(key, iv);
+    std::thread thd([this]{thdFn();});
+    thd_.swap(thd);
+}
+
+Encryptor::~Encryptor() {
+    stop();
+    encryptor_.close();
+}
+
+void Encryptor::thdFn() {
+    S_DEBUG0("Encryptor::thdFn() >>>>\n");
+    while(!finish_) {
+        encThdMsg msg = queue_.dequeue();
+        S_DEBUG1("enc (x%llX - x%llX) >\n", ptr(msg.src_), ptr(msg.dst_));
+#if REAL_ENCRYPTION
+        size_t pageStartOffset = msg.pageNo_ * ALLOC_PAGE_SIZE;
+        size_t unencryptedSize = 0;
+        size_t i = 0;
+        static size_t encryptionStartOffset_ = 1024;
+        if (gu_unlikely(pageStartOffset < encryptionStartOffset_)) {
+            unencryptedSize = std::min(msg.size_, encryptionStartOffset_);
+            memcpy(msg.dst_, msg.src_, unencryptedSize);
+            msg.dst_ += unencryptedSize;
+            msg.src_ += unencryptedSize;
+        }
+
+        int encryptedSize = msg.size_ - unencryptedSize;
+        if(encryptedSize > 0) {
+        encryptor_.set_stream_offset(pageStartOffset + unencryptedSize);
+        encryptor_.encrypt((unsigned char*)msg.dst_, (unsigned char*)msg.src_, msg.size_ - unencryptedSize);
+        }
+#else
+        memcpy(msg.dst_, msg.src_, msg.size_);
+#endif
+        S_DEBUG1("enc (x%llX - x%llX) <\n", ptr(msg.src_), ptr(msg.dst_));
+        finishCounter_.fetch_sub(1);
+    }
+    S_DEBUG0("Encryptor::thdFn() <<<<\n");
+}
+
+void Encryptor::stop() {
+    finish_.store(true);
+    thd_.join();
+}
+
+
+
 EncMMap::EncMMap(const std::string& key, MMap &rawmmap, size_t encryptionStartOffset)
 : key_(key)
 , mmapraw_(rawmmap)
@@ -318,7 +380,8 @@ EncMMap::EncMMap(const std::string& key, MMap &rawmmap, size_t encryptionStartOf
 , lastPageSize_(ALLOC_PAGE_SIZE)
 , encryptionStartOffset_(encryptionStartOffset)
 , defaultPageProtection_(PROT_READ | PROT_WRITE )
-, locked_(false) {
+, locked_(false)
+, encThreadFinishCounter_(0) {
 
     if (!mapped_)
     {
@@ -351,8 +414,19 @@ EncMMap::EncMMap(const std::string& key, MMap &rawmmap, size_t encryptionStartOf
 
     assert(key_.length() >= Aes_ctr_encryptor::FILE_KEY_LENGTH);
     const unsigned char *kkey = (const unsigned char*)key_.c_str();
-    encryptor_.open(kkey, iv);
-    decryptor_.open(kkey, iv);
+    //encryptor_.open(kkey, iv);
+    static unsigned char fkey[Aes_ctr_encryptor::FILE_KEY_LENGTH] =
+      {0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
+       0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
+       0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
+       0, 1};
+    static const int encryptorThdCnt = 10;
+    for (int i = 0; i < encryptorThdCnt; ++i) {
+        auto e = std::make_shared<Encryptor>(fkey, iv, encThreadQueue_, encThreadFinishCounter_);
+        encryptors_.push_back(e);
+    }
+
+    decryptor_.open(fkey, iv);
 }
 
 EncMMap::~EncMMap() {
@@ -390,7 +464,6 @@ void* EncMMap::get_ptr() const {
 void EncMMap::dont_need() const {
     mmapraw_.dont_need();
 }
-#define REAL_ENCRYPTION 1
 void EncMMap::encrypt(char* dst, char* src, size_t size, int pageNumber) const {
     // the last page may be not full
     size = (pageNumber == pagesCnt_-1) ? lastPageSize_ : size;
@@ -439,41 +512,6 @@ void EncMMap::decrypt(char* dst, char* src, size_t size, int pageNumber) const {
 #endif
 }
 
-void EncMMap::encryptionThd(char* dst, char* src, size_t size, int pageNumber) {
-    S_DEBUG0("EncMMap::encryptionThd >>>>\n");
-    size = (pageNumber == pagesCnt_-1) ? lastPageSize_ : size;
-#if REAL_ENCRYPTION
-    static unsigned char iv[Aes_ctr_encryptor::AES_BLOCK_SIZE] = {0};
-    static unsigned char key[Aes_ctr_encryptor::FILE_KEY_LENGTH] =
-      {0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
-       0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
-       0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
-       0, 1};
-
-    Aes_ctr_encryptor encryptor;
-    encryptor.open(key, iv);
-
-    size_t pageStartOffset = pageNumber * ALLOC_PAGE_SIZE;
-    size_t unencryptedSize = 0;
-    size_t i = 0;
-    if (gu_unlikely(pageStartOffset < encryptionStartOffset_)) {
-        unencryptedSize = std::min(size, encryptionStartOffset_);
-        memcpy(dst, src, unencryptedSize);
-        dst += unencryptedSize;
-        src += unencryptedSize;
-    }
-
-    int encryptedSize = size - unencryptedSize;
-    if(encryptedSize > 0) {
-      encryptor.set_stream_offset(pageStartOffset + unencryptedSize);
-      encryptor.encrypt((unsigned char*)dst, (unsigned char*)src, size - unencryptedSize);
-    }
-    encryptor.close();
-#else
-    memcpy(dst, src, size);
-#endif
-    S_DEBUG0("EncMMap::encryptionThd <<<<\n");
-}
 
 void EncMMap::sync(void *addr, size_t length) const {
     int firstPageToSync = page_number((char*)addr);
@@ -591,6 +629,47 @@ void EncMMap::dumpMappingsInt()
     S_DEBUG_A0("vpage -> ppage mappings end\n");
 }
 
+struct PageGluer {
+    char* src_;
+    char* dst_;
+    size_t size_;
+    int minPageNo_;
+    int prevPageNo_;
+    int gluedPages_;
+    static const int glueLimit_ = 10;
+
+    PageGluer(): src_(nullptr), dst_(nullptr), size_(0),
+                 minPageNo_(-1), prevPageNo_(-1), gluedPages_(0) {}
+    bool glue(int pageNo, char* src, char* dst, size_t size) {
+        if (prevPageNo_ == -1) {
+            prevPageNo_ = pageNo;
+            minPageNo_ = pageNo;
+            src_ = src;
+            dst_ = dst;
+            size_ = size;
+            gluedPages_++;
+            return true;
+        }
+
+        if (gluedPages_ < glueLimit_ && prevPageNo_ + 1 == pageNo) {
+            prevPageNo_ = pageNo;
+            size_ += size;
+            gluedPages_++;
+            return true;
+        }
+        return false;
+    }
+
+    void reset() {
+        src_ = nullptr;
+        dst_ = nullptr;
+        size_ = 0;
+        minPageNo_ = -1;
+        prevPageNo_ = -1;
+        gluedPages_ = 0;
+    }
+};
+
 void EncMMap::handle_signal(siginfo_t* info) {
     S_DEBUG0("handle_signal >>>>>>>>>>>\n");
     char* p = static_cast<char*>(info->si_addr);
@@ -614,10 +693,12 @@ void EncMMap::handle_signal(siginfo_t* info) {
             // try to find read page over dirty page
             char *vpageStart = nullptr;
             // free N pages, no more
-            int limit = 10;
+            const static int LIMIT = 100;
+            int limit = LIMIT;
             S_DEBUG1("freeing ppages. allocated: %d\n", vpage2ppage_.size());
-            std::vector<std::thread> encThreads;
-            for (auto kv = vpage2ppage_.begin(); kv != vpage2ppage_.end();) {
+            encThreadFinishCounter_.store(0);
+            PageGluer gluer;
+            for (auto kv = vpage2ppage_.begin(); kv != vpage2ppage_.end(); ++kv) {
             //for (auto kv : vpage2ppage_) {
                 //S_DEBUG1("freeing ppages. allocated: %d\n", vpage2ppage_.size());
                 int pageNo = page_number((char*)kv->first);
@@ -630,28 +711,72 @@ void EncMMap::handle_signal(siginfo_t* info) {
                     // flush
                     char* dstPtr = (char*)mmapraw_.get_ptr() + pageNo*ALLOC_PAGE_SIZE;
                     mprotectd(vpageStart, ALLOC_PAGE_SIZE, PROT_READ);
-//                    std::thread t([&] {encryptionThd(dstPtr, vpageStart, ALLOC_PAGE_SIZE, pageNo);} );
-//                    encThreads.push_back(std::move(t));
-                    encrypt(dstPtr, vpageStart, ALLOC_PAGE_SIZE, pageNo);
+
+                    int pageSize =(pageNo == pagesCnt_-1) ? lastPageSize_ : ALLOC_PAGE_SIZE;
+                    if (gluer.glue(pageNo, vpageStart, dstPtr, pageSize)) {
+                        S_DEBUG0("glued\n");
+                        if (--limit == 0) break;
+                        continue;
+                    }
+                    S_DEBUG0("not glued\n");
+
+                    encThdMsg msg;
+                    msg.dst_ = gluer.dst_;
+                    msg.src_ = gluer.src_;
+                    msg.size_ = gluer.size_;
+                    msg.pageNo_ = gluer.minPageNo_;
+                    encThreadFinishCounter_.fetch_add(1);
+                    encThreadQueue_.enqueue(msg);
+                    gluer.reset();
+                    gluer.glue(pageNo, vpageStart, dstPtr, pageSize);
+
+                    //std::thread t([this, dstPtr, vpageStart, pageNo] {encryptionThd(dstPtr, vpageStart, ALLOC_PAGE_SIZE, pageNo);} );
+                    //t.join();
+                    //encThreads.push_back(std::move(t));
+//                    encrypt(dstPtr, vpageStart, ALLOC_PAGE_SIZE, pageNo);
 
                     flushedCnt++;
                     S_DEBUG0("    -> flushed\n");
                 }
+                // logically should be done in the loop below, but
+                // do it here to avoid pageNo propagation
+//                (page2protection_.get())[pageNo] = PROT_NONE;
 
+                freedCout++;
+                if (--limit == 0) break;
+            }
+            //for (auto &t : encThreads) {
+            //    t.join();
+            //}
+            if (gluer.size_ > 0) {
+                encThdMsg msg;
+                msg.dst_ = gluer.dst_;
+                msg.src_ = gluer.src_;
+                msg.size_ = gluer.size_;
+                msg.pageNo_ = gluer.minPageNo_;
+                encThreadFinishCounter_.fetch_add(1);
+                encThreadQueue_.enqueue(msg);
+            }
+
+            while(encThreadFinishCounter_ > 0) {
+                // wait here somehow
+            }
+            S_DEBUG0("All enc threads finished\n");
+            // do it again with the same limit, so we will free pages which were
+            // synced above
+            limit = LIMIT;
+            for (auto kv = vpage2ppage_.begin(); kv != vpage2ppage_.end();) {
+                vpageStart = (char*)kv->first;
                 if (mmap(vpageStart, ALLOC_PAGE_SIZE, PROT_NONE,
                     MAP_ANONYMOUS|MAP_PRIVATE|MAP_FIXED, -1, 0) == MAP_FAILED) {
                     S_DEBUG0("unmap failed!");
                 }
-
+                int pageNo = page_number((char*)kv->first);
                 (page2protection_.get())[pageNo] = PROT_NONE;
                 memoryManager_.free(vpage2ppage_[vpageStart]);
                 kv = vpage2ppage_.erase(kv);
-                freedCout++;
                 if (--limit == 0) break;
             }
-//            for (auto &t : encThreads) {
-//                t.join();
-//            }
 
             S_DEBUG1("flused/freed: %ld / %ld\n", flushedCnt, freedCout);
             p = memoryManager_.alloc();

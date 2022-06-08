@@ -9,6 +9,9 @@
 #include <atomic>
 #include "gu_mmap.hpp"
 #include "enc_stream_cipher.h"
+#include <mutex>
+#include <condition_variable>
+#include <thread>
 
 namespace gu {
 
@@ -18,6 +21,59 @@ class PMemoryManager;
 void dumpMappings();
 
 std::string generateRandomKey();
+
+struct encThdMsg {
+    char* dst_;
+    char* src_;
+    size_t size_;
+    int pageNo_;
+};
+
+// A threadsafe-queue.
+template <class T>
+class SafeQueue
+{
+public:
+  SafeQueue(void)
+    : q()
+    , m()
+    , c()
+  {}
+
+  ~SafeQueue(void)
+  {}
+
+  // Add an element to the queue.
+  void enqueue(T t)
+  {
+    std::lock_guard<std::mutex> lock(m);
+    q.push(t);
+    c.notify_one();
+  }
+
+  // Get the "front"-element.
+  // If the queue is empty, wait till a element is avaiable.
+  T dequeue(void)
+  {
+    std::unique_lock<std::mutex> lock(m);
+    while(q.empty())
+    {
+      // release lock as long as the wait and reaquire it afterwards.
+      c.wait(lock);
+    }
+    T val = q.front();
+    q.pop();
+    return val;
+  }
+
+private:
+  std::queue<T> q;
+  mutable std::mutex m;
+  std::condition_variable c;
+};
+
+
+
 
 struct PPage {
     int fd_;
@@ -43,6 +99,23 @@ private:
 
     PMemoryManager(const gu::PMemoryManager&);
     PMemoryManager operator=(const gu::PMemoryManager&);
+};
+
+class Encryptor {
+public:
+    Encryptor(unsigned char* key, unsigned char* iv,
+              SafeQueue<encThdMsg>& queue, std::atomic_int& finishCounter);
+    ~Encryptor();
+    void stop();
+    Encryptor(const gu::Encryptor&) = delete;
+private:
+    void thdFn();
+
+    mutable Aes_ctr_encryptor encryptor_;
+    std::atomic_bool finish_;
+    SafeQueue<encThdMsg>& queue_;
+    std::atomic_int& finishCounter_;
+    std::thread thd_;
 };
 
 class EncMMap : public IMMap
@@ -84,7 +157,9 @@ private:
     mutable Aes_ctr_encryptor encryptor_;
     mutable Aes_ctr_decryptor decryptor_;
 
-    void encryptionThd(char* dst, char* src, size_t size, int pageNo);
+    SafeQueue<encThdMsg> encThreadQueue_;
+    std::atomic_int encThreadFinishCounter_;
+    std::vector<std::shared_ptr<Encryptor>> encryptors_;
 
     char* page_start(unsigned long long pageNo) const;
     char* page_start(char* addr) const;
