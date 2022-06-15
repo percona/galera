@@ -29,7 +29,10 @@ namespace gcache
                     seqno2ptr_t&       seqno2ptr,
                     gu::UUID&          gid,
                     int                dbg,
-                    bool               recover);
+                    bool               recover,
+                    bool               encrypt,
+                    size_t             encryptCachePageSize,
+                    size_t             encryptCacheSize);
 
         ~RingBuffer ();
 
@@ -167,9 +170,11 @@ namespace gcache
         static int    const DEBUG = 2; // debug flag
 
         ProgressCallback*  pcb_;
+        bool encrypt_;
+        int masterKeyId_;
+        std::string fileKey_;
         gu::FileDescriptor fd_;
-        gu::MMap           mmapraw_;
-        std::shared_ptr<gu::IMMap>  mmapptr_;  // just to keep mmap_
+        std::shared_ptr<gu::IMMap>  mmapptr_;  // to keep mmap_ member
         gu::IMMap&         mmap_;
         char*        const preamble_; // ASCII text preamble
         int64_t*     const header_;   // cache binary header
@@ -206,6 +211,11 @@ namespace gcache
         static std::string const PR_KEY_SEQNO_MIN;
         static std::string const PR_KEY_OFFSET;
         static std::string const PR_KEY_SYNCED;
+        static std::string const PR_KEY_ENCRYPTION_VERSION;
+        static std::string const PR_KEY_ENCRYPTED;
+        static std::string const PR_KEY_MK_ID;
+        static std::string const PR_KEY_FILE_KEY;
+
 
         void          write_preamble(bool synced);
         void          open_preamble(bool recover);

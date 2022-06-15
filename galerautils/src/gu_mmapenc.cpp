@@ -141,7 +141,7 @@ int make_temp_file(off_t size)
 class PMemoryManagerManager {
 public:
     PMemoryManagerManager(size_t size, size_t allocPageSize);
-    std::shared_ptr<PMemoryManager> allocate();
+    std::shared_ptr<PMemoryManager> allocate(size_t allocPageSize, size_t pagesCount);
     void free(std::shared_ptr<PMemoryManager>mgr);
 
 private:
@@ -157,7 +157,7 @@ PMemoryManagerManager::PMemoryManagerManager(size_t size, size_t allocPageSize)
 
 }
 
-std::shared_ptr<PMemoryManager> PMemoryManagerManager::allocate() {
+std::shared_ptr<PMemoryManager> PMemoryManagerManager::allocate(size_t allocPageSize, size_t pagesCount) {
     std::lock_guard<std::mutex> l(mtx_);
     if (managers_.size() > 0) {
         auto mgr = managers_.back();
@@ -202,7 +202,6 @@ PMemoryManager::PMemoryManager(size_t size, size_t allocPageSize)
     // how many pages do we need to satisfy size?
     allocPagesCnt_ = size / allocPageSize_;
     if (size % allocPageSize_) {
-        // KH: todo: how should we handle not full page at the end when flushing?
         S_DEBUG_A("PMemoryManager::PMemoryManager() adding page, size not aligned to allocation unit: %ld\n", size);
         allocPagesCnt_++;
     }
@@ -322,7 +321,8 @@ static EncMMap* getEncMMap(char* ptr) {
 
 std::once_flag signal_handler_flag;
 struct sigaction oldsigact;
-static std::atomic_bool inside_handler(false);
+static std::atomic_bool inside_handler(false);  // KH: use std::atomic_flag which is 
+                                                // guaranteed to be lock free
 
 void signal_handler(int sig, siginfo_t* info, void* ctx) {
 #if 1
@@ -374,13 +374,16 @@ static void install_signal_handler() {
 }
 
 
-EncMMap::EncMMap(const std::string& key, MMap &rawmmap, size_t encryptionStartOffset)
+EncMMap::EncMMap(const std::string& key, std::shared_ptr<MMap> rawmmap,
+                 size_t cachePageSize, size_t cacheSize, size_t encryptionStartOffset)
 : key_(key)
 , mmapraw_(rawmmap)
+, mmaprawPtr_(mmapraw_->get_ptr())
+, vMemSize_(mmapraw_->get_size())
 // mmap 2 pages more: 1st for aligning start, 2nd if the last underlying page is not aligned
-, mmap_ptr_(static_cast<char*>(mmap(nullptr, mmapraw_.get_size() + 2*ALLOC_PAGE_SIZE, PROT_NONE, MAP_ANONYMOUS|MAP_PRIVATE, -1, 0)))
+, mmap_ptr_(static_cast<char*>(mmap(nullptr, vMemSize_ + 2*ALLOC_PAGE_SIZE, PROT_NONE, MAP_ANONYMOUS|MAP_PRIVATE, -1, 0)))
 , base_(nullptr)
-, memoryManagerP_(memoryManagerManager.allocate())
+, memoryManagerP_(memoryManagerManager.allocate(cachePageSize, cacheSize))
 , memoryManager_(*memoryManagerP_)
 , page2protection_()
 , vpage2ppage_()
@@ -401,34 +404,29 @@ EncMMap::EncMMap(const std::string& key, MMap &rawmmap, size_t encryptionStartOf
     base_ = (char*)(((ptr(mmap_ptr_) + ALLOC_PAGE_SIZE) / ALLOC_PAGE_SIZE) * ALLOC_PAGE_SIZE);
 
     S_DEBUG_A("EncMMap::EncMMap() this: x%llX, mmap_ptr: x%llX aligned mapping: (x%llX - x%llX) (%ld bytes)\n",
-        ptr(this), ptr(mmap_ptr_), ptr(base_), ptr(base_) + mmapraw_.get_size(), mmapraw_.get_size());
+        ptr(this), ptr(mmap_ptr_), ptr(base_), ptr(base_) + vMemSize_, vMemSize_);
     // install signal handler
     std::call_once(signal_handler_flag, install_signal_handler);
-    pagesCnt_ = mmapraw_.get_size() / ALLOC_PAGE_SIZE;
-    if (mmapraw_.get_size() % ALLOC_PAGE_SIZE) {
+    pagesCnt_ = vMemSize_ / ALLOC_PAGE_SIZE;
+    if (vMemSize_ % ALLOC_PAGE_SIZE) {
         // if the size is not aligned, the last page is smaller than ALLOC_PAGE_SIZE
-        lastPageSize_ = mmapraw_.get_size() % ALLOC_PAGE_SIZE;
+        lastPageSize_ = vMemSize_ % ALLOC_PAGE_SIZE;
         S_DEBUG_A("EncMMap::EncMMap() adding page, size not aligned: %ld, lastPageSize: %ld\n",
-          mmapraw_.get_size(), lastPageSize_);
+          vMemSize_, lastPageSize_);
         pagesCnt_++;
     }
 
     S_DEBUG_A("EncMMap::EncMMap() allocated pages cnt: %ld\n", pagesCnt_);
     page2protection_ = std::shared_ptr<int>(new int[pagesCnt_], [](int *p) { delete[] p; });
     memset(page2protection_.get(), PROT_NONE, sizeof(int) * pagesCnt_);
-    addEncMMap(this, base_, mmapraw_.get_size());
+    addEncMMap(this, base_, vMemSize_);
 
-    static unsigned char iv[Aes_ctr_encryptor::AES_BLOCK_SIZE] = {0};
-
-    assert(key_.length() >= Aes_ctr_encryptor::FILE_KEY_LENGTH);
-    const unsigned char *kkey = (const unsigned char*)key_.c_str();
-    encryptor_.open(kkey, iv);
-    decryptor_.open(kkey, iv);
+    set_key(key_);
 }
 
 EncMMap::~EncMMap() {
     S_DEBUG_A("EncMMap::~EncMMap() this: x%llX, mmap_ptr: x%llX aligned mapping: (x%llX - x%llX) (%ld bytes)\n",
-        ptr(this), ptr(mmap_ptr_), ptr(base_), ptr(base_) + mmapraw_.get_size(), mmapraw_.get_size());
+        ptr(this), ptr(mmap_ptr_), ptr(base_), ptr(base_) + vMemSize_, vMemSize_);
     if (mapped_)
     {
         try { unmap(); } catch (Exception& e) { log_error << e.what(); }
@@ -452,7 +450,7 @@ void EncMMap::unlock() {
 }
 
 size_t EncMMap::get_size() const {
-    return mmapraw_.get_size();
+    return vMemSize_;
 }
 
 void* EncMMap::get_ptr() const {
@@ -460,7 +458,7 @@ void* EncMMap::get_ptr() const {
 }
 
 void EncMMap::dont_need() const {
-    mmapraw_.dont_need();
+    mmapraw_->dont_need();
 }
 void EncMMap::encrypt(char* dst, char* src, size_t size, int pageNumber) const {
     // the last page may be not full
@@ -537,7 +535,7 @@ void EncMMap::sync(void *addr, size_t length) const {
         if(protection == (PROT_READ | PROT_WRITE)) {
             // flush
             mprotectd(vpageStart, ALLOC_PAGE_SIZE, PROT_READ);
-            char* dstPtr = (char*)mmapraw_.get_ptr() + pageNo*ALLOC_PAGE_SIZE;
+            char* dstPtr = (char*)mmaprawPtr_ + pageNo*ALLOC_PAGE_SIZE;
             encrypt(dstPtr, vpageStart, ALLOC_PAGE_SIZE, pageNo);
             S_DEBUG0("    -> flushed\n");
             mprotectd(vpageStart, ALLOC_PAGE_SIZE, defaultPageProtection_);
@@ -545,7 +543,7 @@ void EncMMap::sync(void *addr, size_t length) const {
     }
     // sync the underlaying file
     // we need to sync whole alloc pages
-    mmapraw_.sync((char*)mmapraw_.get_ptr()+syncStartOffset, realSyncLen);
+    mmapraw_->sync((char*)mmaprawPtr_+syncStartOffset, realSyncLen);
  }
 
 void EncMMap::sync() const {
@@ -558,14 +556,14 @@ void EncMMap::sync() const {
         if(protection == (PROT_READ | PROT_WRITE)) {
             // flush
             mprotectd(vpageStart, ALLOC_PAGE_SIZE, PROT_READ);
-            char* dstPtr = (char*)mmapraw_.get_ptr() + pageNo*ALLOC_PAGE_SIZE;
+            char* dstPtr = (char*)mmaprawPtr_ + pageNo*ALLOC_PAGE_SIZE;
             encrypt(dstPtr, vpageStart, ALLOC_PAGE_SIZE, pageNo);
             S_DEBUG0("    -> flushed\n");
             mprotectd(vpageStart, ALLOC_PAGE_SIZE, defaultPageProtection_);
         }
     }
     // sync the underlaying file
-    mmapraw_.sync(mmapraw_.get_ptr(), get_size());
+    mmapraw_->sync(mmaprawPtr_, get_size());
 }
 
 void EncMMap::unmap() {
@@ -582,9 +580,21 @@ void EncMMap::unmap() {
                                 << ") failed";
     }
     S_DEBUG_A("EncMMap::unmap() (x%llX - x%llX) (%ld bytes)\n",
-        (unsigned long long)base_, (unsigned long long)base_ + mmapraw_.get_size(), mmapraw_.get_size());
+        (unsigned long long)base_, (unsigned long long)base_ + vMemSize_, vMemSize_);
     base_ = nullptr;
     mapped_ = false;
+}
+
+void EncMMap::set_key(const std::string& key) {
+    static unsigned char iv[Aes_ctr_encryptor::AES_BLOCK_SIZE] = {0};
+
+    key_ = key;
+    assert(key_.length() >= Aes_ctr_encryptor::FILE_KEY_LENGTH);
+    const unsigned char *kkey = (const unsigned char*)key_.c_str();
+    encryptor_.close();
+    decryptor_.close();
+    encryptor_.open(kkey, iv);
+    decryptor_.open(kkey, iv);
 }
 
 char* EncMMap::page_start(unsigned long long pageNo) const {
@@ -707,7 +717,7 @@ void EncMMap::handle_signal(siginfo_t* info) {
                   pageNo, (page2protection_.get())[pageNo], (unsigned long long)vpageStart, (unsigned long long)vpageStart+ALLOC_PAGE_SIZE);
                 if(protection == (PROT_READ | PROT_WRITE)) {
                     // flush
-                    char* dstPtr = (char*)mmapraw_.get_ptr() + pageNo*ALLOC_PAGE_SIZE;
+                    char* dstPtr = (char*)mmaprawPtr_ + pageNo*ALLOC_PAGE_SIZE;
                     mprotectd(vpageStart, ALLOC_PAGE_SIZE, PROT_READ);
 
                     int pageSize =(pageNo == pagesCnt_-1) ? lastPageSize_ : ALLOC_PAGE_SIZE;
@@ -759,7 +769,7 @@ void EncMMap::handle_signal(siginfo_t* info) {
         }
 
         // this page
-        char* srcPtr = (char*)mmapraw_.get_ptr() + reqPageNo*ALLOC_PAGE_SIZE;
+        char* srcPtr = (char*)mmaprawPtr_ + reqPageNo*ALLOC_PAGE_SIZE;
 
         decrypt(p->ptr_, srcPtr, ALLOC_PAGE_SIZE, reqPageNo);
         // make it visible through the file
@@ -797,7 +807,7 @@ void EncMMap::handle_signal(siginfo_t* info) {
                   (unsigned long long)page_start(reqPageNo)+ALLOC_PAGE_SIZE);
                 break;
             }
-            char* srcPtr = (char*)mmapraw_.get_ptr() + reqPageNo*ALLOC_PAGE_SIZE;
+            char* srcPtr = (char*)mmaprawPtr_ + reqPageNo*ALLOC_PAGE_SIZE;
             decrypt(p->ptr_, srcPtr, ALLOC_PAGE_SIZE, reqPageNo);
             reqPageStart = page_start(reqPageNo);
 

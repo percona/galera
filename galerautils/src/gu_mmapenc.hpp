@@ -52,7 +52,8 @@ private:
 class EncMMap : public IMMap
 {
 public:
-    EncMMap(const std::string &key, MMap &mmap, size_t encryptionStartOffset = 0);
+    EncMMap(const std::string &key, std::shared_ptr<MMap> mmap,
+            size_t cachePageSize, size_t cacheSize, size_t encryptionStartOffset = 0);
     size_t get_size() const override;
     void*  get_ptr() const override;
 
@@ -60,6 +61,8 @@ public:
     void sync(void *addr, size_t length) const override;
     void sync() const override;
     void unmap() override;
+    void set_key(const std::string& key) override;
+    
     ~EncMMap();
 
     void handle_signal(siginfo_t*);
@@ -73,7 +76,9 @@ private:
     void decrypt(char* dst, char* src, size_t size, int pageNumber) const;
     void dumpMappingsInt();
     std::string key_;
-    MMap& mmapraw_;
+    std::shared_ptr<MMap> mmapraw_;
+    void* mmaprawPtr_;
+    size_t vMemSize_;
     char* mmap_ptr_;
     char* base_;
     std::shared_ptr<PMemoryManager> memoryManagerP_;

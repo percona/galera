@@ -22,7 +22,7 @@ public:
     virtual void sync(void *addr, size_t length) const = 0;
     virtual void sync() const = 0;
     virtual void unmap() = 0;
-
+    virtual void set_key(const std::string& key) = 0;
     virtual ~IMMap(){};
 };
 
@@ -42,6 +42,7 @@ public:
     void sync(void *addr, size_t length) const override;
     void sync() const override;
     void unmap() override;
+    void set_key(const std::string& key) override {}
 
 private:
 

@@ -12,7 +12,7 @@
 #include <gu_progress.hpp>
 #include <gu_hexdump.hpp>
 #include <gu_hash.h>
-#include <gu_mmapenc.hpp>
+#include <gu_mmap_factory.hpp>
 
 #include <cassert>
 #include <iostream> // std::cerr
@@ -75,9 +75,15 @@ namespace gcache
                             seqno2ptr_t&       seqno2ptr,
                             gu::UUID&          gid,
                             int const          dbg,
-                            bool const         recover)
+                            bool const         recover,
+                            bool               encrypt,
+                            size_t             encryptCachePageSize,
+                            size_t             encryptCacheSize)
     :
         pcb_       (pcb),
+        encrypt_   (encrypt),
+        masterKeyId_(0),
+        fileKey_(),
 #ifdef PXC
 #ifdef HAVE_PSI_INTERFACE
         fd_        (name, WSREP_PFS_INSTR_TAG_RINGBUFFER_FILE, check_size(size)),
@@ -87,15 +93,8 @@ namespace gcache
 #else
         fd_        (name, check_size(size)),
 #endif /* PXC */
-        mmapraw_   (fd_),
-        // KH: here we need factory creating encrypted/not encrypted mmap
-#if 1
-        mmapptr_   (std::make_shared<gu::EncMMap>("01234567890123456789012345678901", mmapraw_, static_cast<size_t>(PREAMBLE_LEN))),
+        mmapptr_   (gu::MMapFactory::create(fd_, encrypt, encryptCachePageSize, encryptCacheSize, static_cast<size_t>(PREAMBLE_LEN))),
         mmap_      (*mmapptr_),
-#else
-        mmapptr_   (nullptr),
-        mmap_      (mmapraw_),
-#endif
         preamble_  (static_cast<char*>(mmap_.get_ptr())),
         header_    (reinterpret_cast<int64_t*>(preamble_ + PREAMBLE_LEN)),
         start_     (reinterpret_cast<uint8_t*>(header_   + HEADER_LEN)),
@@ -620,6 +619,10 @@ namespace gcache
     std::string const RingBuffer::PR_KEY_SEQNO_MIN = "seqno_min:";
     std::string const RingBuffer::PR_KEY_OFFSET    = "offset:";
     std::string const RingBuffer::PR_KEY_SYNCED    = "synced:";
+    std::string const RingBuffer::PR_KEY_ENCRYPTION_VERSION = "enc_version:";
+    std::string const RingBuffer::PR_KEY_ENCRYPTED = "enc_encrypted:";
+    std::string const RingBuffer::PR_KEY_MK_ID = "enc_mk_id:";
+    std::string const RingBuffer::PR_KEY_FILE_KEY = "enc_fk_id:";
 
     void
     RingBuffer::write_preamble(bool const synced)
@@ -651,6 +654,14 @@ namespace gcache
         }
 
         os << PR_KEY_SYNCED << ' ' << synced << '\n';
+
+        os << PR_KEY_ENCRYPTION_VERSION << 1 << '\n';
+        os << PR_KEY_ENCRYPTED << encrypt_ << '\n';
+        if (encrypt_) {
+            os << PR_KEY_MK_ID << masterKeyId_ << '\n';
+            os << PR_KEY_FILE_KEY << fileKey_ << '\n';
+        }
+
         os << '\n';
 
         ::memset(preamble_, '\0', PREAMBLE_LEN);
@@ -664,7 +675,7 @@ namespace gcache
     }
 
     void
-    RingBuffer::open_preamble(bool const do_recover)
+    RingBuffer::open_preamble(bool do_recover)
     {
         int version(0); // used only for recovery on upgrade
         uint8_t* const preamble(reinterpret_cast<uint8_t*>(preamble_));
@@ -672,6 +683,9 @@ namespace gcache
         long long seqno_min(SEQNO_ILL);
         off_t offset(-1);
         bool  synced(false);
+
+        bool enc_encrypted (false);
+        int enc_version(0);
 
         {
             std::istringstream iss(preamble_);
@@ -694,6 +708,10 @@ namespace gcache
                 else if (PR_KEY_SEQNO_MIN == key) istr >> seqno_min;
                 else if (PR_KEY_OFFSET    == key) istr >> offset;
                 else if (PR_KEY_SYNCED    == key) istr >> synced;
+                else if (PR_KEY_ENCRYPTION_VERSION == key) istr >> enc_version;
+                else if (PR_KEY_ENCRYPTED == key) istr >> enc_encrypted;
+                else if (PR_KEY_MK_ID     == key) istr >> masterKeyId_;
+                else if (PR_KEY_FILE_KEY  == key) istr >> fileKey_;
             }
         }
 
@@ -713,12 +731,41 @@ namespace gcache
            offset = -1;
         }
 
+        if (enc_encrypted != encrypt_) {
+            // if we are switching enc <-> not enc, no point in recovering
+            do_recover = false;
+        }
+
+        if (encrypt_) {
+            // TODO: we need whole logic of MK generation if there is no one,
+            // generation of FK if there is no FK and so on...
+
+            // 1. Get MK from encryption context
+            //std::string mk = encryptionCtx_.MasterKeyProvider().GetMasterKey(enc_mk_id);
+
+            // 2. Decrypt file key
+            // decode base64
+            //std::string fk = decrypt(mk, enc_fk);
+
+            // 3. pass file key to the mmap
+            // Yes, I know this is ugly and IMMap should not have set_key() method,
+            // and we should setup file key when MMapEnc decorator is created by factory,
+            // but we have file key now, not earlier when mmap is created,
+            // mmap_ is the reference, so no way to wrap it here
+            // so just to not touch too much of the original code, and to not couple
+            // RingBuffer class with MMapEnc class...
+            std::string fk("01234567890123456789012345678901");
+            mmap_.set_key(fk);
+        }
+
         log_info << "GCache DEBUG: opened preamble:"
                  << "\nVersion: " << version
                  << "\nUUID: " << gid_
                  << "\nSeqno: " << seqno_min << " - " << seqno_max
                  << "\nOffset: " << offset
-                 << "\nSynced: " << synced;
+                 << "\nSynced: " << synced
+                 << "\nEncVersion: " << enc_version
+                 << "\nEncrypted: " << encrypt_;
 
         if (do_recover)
         {

@@ -97,6 +97,8 @@ namespace gcache
 
         seqno2ptr.insert(seqno_g, ptr);
 
+//        fprintf(stderr, "KH: bh: x%llX, bh->seqno_g addr: x%llX\n",
+//          (unsigned long long)bh, (unsigned long long)(&(bh->seqno_g)));
         bh->seqno_g = seqno_g;
         bh->flags  |= (BUFFER_SKIPPED * skip);
         bh->type    = type;

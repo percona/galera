@@ -117,6 +117,7 @@ galera::ReplicatorSMM::InitConfig::InitConfig(gu::Config&       conf,
     }
     Certification::register_params(conf);
     ist::register_params(conf);
+    gu::Allocator::register_params(conf);
 }
 
 

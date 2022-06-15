@@ -3,7 +3,7 @@
  */
 
 #include "GCache.hpp"
-
+// KH: gcache defaults
 static const std::string GCACHE_PARAMS_DIR        ("gcache.dir");
 static const std::string GCACHE_DEFAULT_DIR       ("");
 static const std::string GCACHE_PARAMS_RB_NAME    ("gcache.name");
@@ -32,6 +32,12 @@ static const std::string GCACHE_DEFAULT_KEEP_PAGES_COUNT("0");
 static const std::string GCACHE_PARAMS_FREEZE_PURGE_SEQNO("gcache.freeze_purge_at_seqno");
 static const std::string GCACHE_DEFAULT_FREEZE_PURGE_SEQNO("-1");
 #endif /* PXC */
+static const std::string GCACHE_PARAMS_ENCRYPTION("gcache.encryption");
+static const std::string GCACHE_DEFAULT_ENCRYPTION("no");
+static const std::string GCACHE_PARAMS_ENCRYPTION_CACHE_PAGE_SIZE("gcache.encryption_cache_page_size");
+static const std::string GCACHE_DEFAULT_ENCRYPTION_CACHE_PAGE_SIZE("32K");
+static const std::string GCACHE_PARAMS_ENCRYPTION_CACHE_SIZE("gcache.encryption_cache_size");
+static const std::string GCACHE_DEFAULT_ENCRYPTION_CACHE_SIZE("16777216");  // 512 x 32K
 
 void
 gcache::GCache::Params::register_params(gu::Config& cfg)
@@ -50,6 +56,9 @@ gcache::GCache::Params::register_params(gu::Config& cfg)
     cfg.add(GCACHE_PARAMS_KEEP_PAGES_COUNT, GCACHE_DEFAULT_KEEP_PAGES_COUNT);
     cfg.add(GCACHE_PARAMS_FREEZE_PURGE_SEQNO, GCACHE_DEFAULT_FREEZE_PURGE_SEQNO);
 #endif /* PXC */
+    cfg.add(GCACHE_PARAMS_ENCRYPTION, GCACHE_DEFAULT_ENCRYPTION);
+    cfg.add(GCACHE_PARAMS_ENCRYPTION_CACHE_PAGE_SIZE, GCACHE_DEFAULT_ENCRYPTION_CACHE_PAGE_SIZE);
+    cfg.add(GCACHE_PARAMS_ENCRYPTION_CACHE_SIZE, GCACHE_DEFAULT_ENCRYPTION_CACHE_SIZE);
 }
 
 static const std::string
@@ -89,12 +98,14 @@ gcache::GCache::Params::Params (gu::Config& cfg, const std::string& data_dir)
 #else
     debug_    (0),
 #endif
-#ifdef PXC
-    recover_  (cfg.get<bool>(GCACHE_PARAMS_RECOVER)),
-    keep_pages_count_(cfg.get<size_t>(GCACHE_PARAMS_KEEP_PAGES_COUNT)),
-    freeze_purge_at_seqno_(cfg.get<seqno_t>(GCACHE_PARAMS_FREEZE_PURGE_SEQNO))
-#else
     recover_  (cfg.get<bool>(GCACHE_PARAMS_RECOVER))
+#ifdef PXC
+    ,
+    keep_pages_count_(cfg.get<size_t>(GCACHE_PARAMS_KEEP_PAGES_COUNT)),
+    freeze_purge_at_seqno_(cfg.get<seqno_t>(GCACHE_PARAMS_FREEZE_PURGE_SEQNO)),
+    encrypt_(cfg.get<bool>(GCACHE_PARAMS_ENCRYPTION)),
+    encryption_cache_page_size_(cfg.get<size_t>(GCACHE_PARAMS_ENCRYPTION_CACHE_PAGE_SIZE)),
+    encryption_cache_size_(cfg.get<size_t>(GCACHE_PARAMS_ENCRYPTION_CACHE_SIZE))
 #endif /* PXC */
 {}
 
@@ -108,6 +119,12 @@ gcache::GCache::param_set (const std::string& key, const std::string& val)
     else if (key == GCACHE_PARAMS_DIR)
     {
         gu_throw_error(EPERM) << "Can't change data dir in runtime.";
+    }
+    else if (key == GCACHE_PARAMS_ENCRYPTION ||
+             key == GCACHE_PARAMS_ENCRYPTION_CACHE_PAGE_SIZE ||
+             key == GCACHE_PARAMS_ENCRYPTION_CACHE_SIZE)
+    {
+        gu_throw_error(EPERM) << "Can't change gcache encryption parameters in runtime.";
     }
     else if (key == GCACHE_PARAMS_MEM_SIZE)
     {

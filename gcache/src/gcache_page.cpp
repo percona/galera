@@ -6,7 +6,7 @@
 
 #include "gcache_page.hpp"
 #include "gcache_limits.hpp"
-#include "gu_mmapenc.hpp"
+#include <gu_mmap_factory.hpp>
 
 #include <gu_throw.hpp>
 #include <gu_logger.hpp>
@@ -56,7 +56,7 @@ gcache::Page::drop_fs_cache() const
 #endif
 }
 
-gcache::Page::Page (void* ps, const std::string& name, size_t size, int dbg)
+gcache::Page::Page (void* ps, const std::string& name, size_t size, int dbg, bool encrypt, size_t encryptCachePageSize, size_t encryptCacheSize)
     :
 #ifdef PXC
 #ifdef HAVE_PSI_INTERFACE
@@ -67,15 +67,8 @@ gcache::Page::Page (void* ps, const std::string& name, size_t size, int dbg)
 #else
     fd_   (name, size, true, false),
 #endif /* PXC */
-    mmapraw_   (fd_),
-    // KH: here we need factory creating encrypted/not encrypted mmap
-#if 1
-    mmapptr_   (std::make_shared<gu::EncMMap>(gu::generateRandomKey(), mmapraw_)),
+    mmapptr_   (gu::MMapFactory::create(fd_, encrypt, encryptCachePageSize, encryptCacheSize, 0)),
     mmap_      (*mmapptr_),
-#else
-    mmapptr_   (nullptr),
-    mmap_      (mmapraw_),
-#endif
     ps_   (ps),
     next_ (static_cast<uint8_t*>(mmap_.get_ptr())),
     space_(mmap_.get_size()),

@@ -56,16 +56,21 @@ namespace gcache
         gid       (),
         mem       (params.mem_size(), seqno2ptr, params.debug()),
         rb        (pcb, params.rb_name(), params.rb_size(), seqno2ptr, gid,
-                   params.debug(), params.recover()),
+                   params.debug(), params.recover(), params.encrypt(),
+                   params.encryption_cache_page_size(),
+                   std::min(params.encryption_cache_size(), params.rb_size())),
         ps        (params.dir_name(),
                    params.keep_pages_size(),
                    params.page_size(),
                    params.debug(),
-#ifdef PXC
+#if 1
                    /* keep last page if PS is the only storage */
                    params.keep_pages_count() ?
                    params.keep_pages_count() :
-                    !((params.mem_size() + params.rb_size()) > 0)),
+                    !((params.mem_size() + params.rb_size()) > 0),
+                   params.encrypt(),
+                   params.encryption_cache_page_size(),
+                   std::min(params.encryption_cache_size(), params.page_size())),
 #else
                    !((params.mem_size() + params.rb_size()) > 0)),
 #endif /* PXC */

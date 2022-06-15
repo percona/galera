@@ -24,7 +24,7 @@ namespace gcache
     {
     public:
 
-        Page (void* ps, const std::string& name, size_t size, int dbg);
+        Page (void* ps, const std::string& name, size_t size, int dbg, bool encrypt, size_t encryptCachePageSize, size_t encryptCachePagesCount);
         ~Page () {}
 
         void* malloc  (size_type size);
@@ -97,7 +97,6 @@ namespace gcache
     private:
 
         gu::FileDescriptor fd_;
-        gu::MMap           mmapraw_;
         std::shared_ptr<gu::IMMap>  mmapptr_;  // just to keep mmap_
         gu::IMMap&         mmap_;
         void* const        ps_;

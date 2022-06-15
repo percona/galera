@@ -23,6 +23,7 @@
 
 namespace gu
 {
+class Config;
 
 class Allocator
 {
@@ -45,7 +46,7 @@ public:
                void*               reserved       = NULL,
                page_size_type      reserved_size  = 0,
                heap_size_type      max_heap       = (1U << 22),   /* 4M  */
-               page_size_type      disk_page_size = (1U << 26));  /* 64M */
+               page_size_type      disk_page_size = (1U << 26));  /* 64M */ // KH: default file size in page store
 
     ~Allocator ();
 
@@ -68,6 +69,9 @@ public:
     /* After we allocated 3 heap pages, spilling vector into heap should not
      * be an issue. */
     static size_t const INITIAL_VECTOR_SIZE = 4;
+
+    static void register_params(gu::Config& conf);
+    static void configure_encryption(gu::Config& conf);
 
 private:
 
@@ -130,7 +134,6 @@ private:
     private:
 
         FileDescriptor fd_;
-        gu::MMap           mmapraw_;
         std::shared_ptr<gu::IMMap>  mmapptr_;  // just to keep mmap_
         gu::IMMap&         mmap_;
     };

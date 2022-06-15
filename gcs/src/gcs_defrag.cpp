@@ -23,6 +23,21 @@
         }                                                       \
     } while (0)
 
+
+static void dumpMemory(const void *ptr, size_t size) {
+    fprintf(stderr, "DUMP START x%llX, size: %ld", (unsigned long long)ptr, size);
+    unsigned char *p = (unsigned char*)ptr;
+    for (size_t i = 0; i < size; ++i) {
+        if(i%16==0) {
+            fprintf(stderr, "\n");
+        }
+        fprintf(stderr, "%02x ", p[i]);
+    }
+    fprintf(stderr, "\nDUMP END x%llX, size: %ld\n", (unsigned long long)ptr, size);
+}
+
+
+
 /*!
  * Handle action fragment
  *
@@ -145,7 +160,36 @@ gcs_defrag_handle_frag (gcs_defrag_t*         df,
 // KH: here the frag (mallocked) is copied into tail (gcache)
 #ifndef GCS_FOR_GARB
     assert (df->tail);
+//    fprintf(stderr, "KH: gcs_defrag_handle_frag memcpy dst: x%llX, size: %ld\n", (unsigned long long)(df->tail), frg->frag_len);
+#if 1
     memcpy (df->tail, frg->frag, frg->frag_len); // KH: and here we memcpy from mallocked to gcache
+#else
+    for (size_t k = 0; k < frg->frag_len; ++k) {
+        ((unsigned char*)df->tail)[k] = ((unsigned char*)frg->frag)[k];
+    }
+#endif
+#if 0
+    if (memcmp(df->tail, frg->frag, frg->frag_len)) {
+ //       fprintf(stderr, "KH: gcs_defrag_handle_frag copied memory does not match\n");
+        // find the address where it does not match
+        for(size_t i = 0; i < frg->frag_len; ++i) {
+            unsigned char dst = ((unsigned char*)df->tail)[i];
+            unsigned char src = ((unsigned char*)frg->frag)[i];
+            if ( dst != src ) {
+                unsigned long long dstaddr = (unsigned long long)(&(((unsigned char*)df->tail)[i]));
+                unsigned long long srcaddr = (unsigned long long)(&(((unsigned char*)frg->frag)[i]));
+                fprintf(stderr, "KH: offset: %ld, src: x%X (x%llX), dst: x%X (x%llX\n",
+                  i, src, srcaddr, dst, dstaddr);
+                ((unsigned char*)df->tail)[i] = ((unsigned char*)frg->frag)[i];
+            }
+        }
+        //memcpy (df->tail, frg->frag, frg->frag_len); // KH: and here we memcpy from mallocked to gcache
+        if (memcmp(df->tail, frg->frag, frg->frag_len)) {
+            fprintf(stderr, "KH: still bad!\n");
+        }
+    }
+   // dumpMemory(df->tail, frg->frag_len);
+#endif
     df->tail += frg->frag_len;
 #else
     /* we skip memcpy since have not allocated any buffer */

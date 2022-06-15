@@ -105,7 +105,7 @@ galera::ReplicatorSMM::ReplicatorSMM(const struct wsrep_init_args* args)
     state_file_         (config_.get(BASE_DIR)+'/'+GALERA_STATE_FILE),
     st_                 (state_file_),
     safe_to_bootstrap_  (true),
-    trx_params_         (config_.get(BASE_DIR), -1,
+    trx_params_         (config_.get(BASE_DIR), -1,  // KH: extend trx_params to pass encryption params
                          KeySet::version(config_.get(Param::key_format)),
                          TrxHandleMaster::Defaults.record_set_ver_,
                          gu::from_string<int>(config_.get(
@@ -207,6 +207,11 @@ galera::ReplicatorSMM::ReplicatorSMM(const struct wsrep_init_args* args)
     */
     if (abort_cb_) gu_abort_register_cb(abort_cb_);
 #endif /* PXC */
+    // KH: Maybe not the most elegant solution, but let's go this way
+    // as configuration cannot change in runtime, and we don't want to
+    // pass the parameters down the stack, which would cause API change
+    // of several classes down the way
+    gu::Allocator::configure_encryption(config_);
 
     // @todo add guards (and perhaps actions)
     state_.add_transition(Transition(S_CLOSED,  S_DESTROYED));

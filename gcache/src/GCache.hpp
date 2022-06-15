@@ -14,6 +14,7 @@
 #include <gu_lock.hpp> // for gu::Mutex and gu::Cond
 #include <gu_config.hpp>
 #include <gu_gtid.hpp>
+#include <gu_mmap_factory.hpp>  // for gu::EncryptionCtx
 
 #include <string>
 #include <iostream>
@@ -229,6 +230,9 @@ namespace gcache
 #ifdef PXC
             size_t keep_pages_count()    const { return keep_pages_count_;}
 #endif /* PXC */
+            bool   encrypt()             const { return encrypt_;         }
+            size_t encryption_cache_page_size() const { return encryption_cache_page_size_; }
+            size_t encryption_cache_size() const { return encryption_cache_size_; }
             int    debug()               const { return debug_;           }
             bool   recover()             const { return recover_;         }
 
@@ -265,6 +269,9 @@ namespace gcache
             size_t            keep_pages_count_;
             seqno_t           freeze_purge_at_seqno_;
 #endif /* PXC */
+            bool        const encrypt_;
+            size_t      const encryption_cache_page_size_;
+            size_t      const encryption_cache_size_;
         }
             params;
 
