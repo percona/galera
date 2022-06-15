@@ -35,7 +35,10 @@ public:
     std::shared_ptr<PPage> alloc();
     void free(std::shared_ptr<PPage> page);
     void reset();
+    void GetCreateParams(size_t* size, size_t* allocPageSize);
+
 private:
+    size_t createSize_;
     char* base_;
     size_t size_;
     std::vector<std::shared_ptr<PPage>> freePages_;
@@ -77,6 +80,7 @@ private:
     void dumpMappingsInt();
     std::string key_;
     std::shared_ptr<MMap> mmapraw_;
+    size_t pageSize_;
     void* mmaprawPtr_;
     size_t vMemSize_;
     char* mmap_ptr_;

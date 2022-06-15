@@ -12,7 +12,11 @@
 #include <gu_progress.hpp>
 #include <gu_hexdump.hpp>
 #include <gu_hash.h>
+
 #include <gu_mmap_factory.hpp>
+#include <gu_encryption.hpp>
+#include <enc_stream_cipher.h>
+#include <gu_crc.hpp>
 
 #include <cassert>
 #include <iostream> // std::cerr
@@ -623,6 +627,7 @@ namespace gcache
     std::string const RingBuffer::PR_KEY_ENCRYPTED = "enc_encrypted:";
     std::string const RingBuffer::PR_KEY_MK_ID = "enc_mk_id:";
     std::string const RingBuffer::PR_KEY_FILE_KEY = "enc_fk_id:";
+    std::string const RingBuffer::PR_KEY_ENC_CRC = "enc_crc:";
 
     void
     RingBuffer::write_preamble(bool const synced)
@@ -655,12 +660,20 @@ namespace gcache
 
         os << PR_KEY_SYNCED << ' ' << synced << '\n';
 
-        os << PR_KEY_ENCRYPTION_VERSION << 1 << '\n';
-        os << PR_KEY_ENCRYPTED << encrypt_ << '\n';
-        if (encrypt_) {
-            os << PR_KEY_MK_ID << masterKeyId_ << '\n';
-            os << PR_KEY_FILE_KEY << fileKey_ << '\n';
-        }
+        // Encrption info
+        static const int ENCRYPTION_VERSION = 1;
+        os << PR_KEY_ENCRYPTION_VERSION << ' ' << ENCRYPTION_VERSION << '\n';
+        os << PR_KEY_ENCRYPTED << ' ' << encrypt_ << '\n';
+        os << PR_KEY_MK_ID << ' ' << masterKeyId_ << '\n';
+        os << PR_KEY_FILE_KEY << ' ' << fileKey_ << '\n';
+
+        gu::CRC32C crc;
+        crc.append(&ENCRYPTION_VERSION, sizeof(ENCRYPTION_VERSION));
+        crc.append(&encrypt_, sizeof(encrypt_));
+        crc.append(&masterKeyId_, sizeof(masterKeyId_));
+        crc.append(fileKey_.c_str(), fileKey_.length());
+        uint32_t crc_val = crc.get();
+        os << PR_KEY_ENC_CRC << ' ' << crc_val << '\n';
 
         os << '\n';
 
@@ -684,8 +697,9 @@ namespace gcache
         off_t offset(-1);
         bool  synced(false);
 
-        bool enc_encrypted (false);
+        bool enc_encrypted(false);
         int enc_version(0);
+        uint32_t enc_crc(0);
 
         {
             std::istringstream iss(preamble_);
@@ -712,6 +726,7 @@ namespace gcache
                 else if (PR_KEY_ENCRYPTED == key) istr >> enc_encrypted;
                 else if (PR_KEY_MK_ID     == key) istr >> masterKeyId_;
                 else if (PR_KEY_FILE_KEY  == key) istr >> fileKey_;
+                else if (PR_KEY_ENC_CRC   == key) istr >> enc_crc;
             }
         }
 
@@ -737,16 +752,64 @@ namespace gcache
         }
 
         if (encrypt_) {
-            // TODO: we need whole logic of MK generation if there is no one,
-            // generation of FK if there is no FK and so on...
+            uint32_t crc_val = 0;
+            if (enc_crc != 0) {
+                // we've got some CRC, check if encryption data is consistent
+                gu::CRC32C crc;
+                crc.append(&enc_version, sizeof(enc_version));
+                crc.append(&enc_encrypted, sizeof(enc_encrypted));
+                crc.append(&masterKeyId_, sizeof(masterKeyId_));
+                crc.append(fileKey_.c_str(), fileKey_.length());
+                crc_val = crc.get();
+            }
+            if (enc_crc == 0 || crc_val != enc_crc) {
+                log_warn << "Encryption header CRC mismatch (or missing)."
+                            << " Calculated: " << crc_val
+                            << " Expected: " << enc_crc;
+                // this will trigger new file key generation and GCache reset
+                fileKey_.clear();
+                // master key can be spoiled as well
+                masterKeyId_ = 0;
+            }
+
+            if (masterKeyId_ == 0) {
+                // no MasterKey. Generate the new one
+                masterKeyId_ = 1;
+            }
 
             // 1. Get MK from encryption context
             //std::string mk = encryptionCtx_.MasterKeyProvider().GetMasterKey(enc_mk_id);
+            std::string mk("01234567890123456789012345678901");
 
-            // 2. Decrypt file key
-            // decode base64
-            //std::string fk = decrypt(mk, enc_fk);
+            // 2. Decrypt fileKey_ (or generate the new one)
+            static unsigned char iv[gu::Aes_ctr_decryptor::AES_BLOCK_SIZE] = {0};
+            std::string unencryptedFileKey;
+            const unsigned char* mkPtr = reinterpret_cast<const unsigned char*>(mk.c_str());
 
+            if (fileKey_.empty()) {
+                // no file key. Generate the new one
+                unencryptedFileKey = gu::generateRandomKey();
+                const unsigned char* keyPtr = reinterpret_cast<const unsigned char*>(unencryptedFileKey.c_str());
+                // encrypt it
+                char encKeyArr[gu::Aes_ctr::FILE_KEY_LENGTH];
+                unsigned char* encKeyArrPtr = reinterpret_cast<unsigned char*>(encKeyArr);
+                gu::Aes_ctr_encryptor encryptor;
+                encryptor.open(mkPtr, iv);
+                encryptor.encrypt(encKeyArrPtr, keyPtr, unencryptedFileKey.length());
+                encryptor.close();
+                fileKey_ = gu::encode64(std::string(encKeyArr, gu::Aes_ctr::FILE_KEY_LENGTH));
+                do_recover = false;
+            } else {
+                std::string encryptedFileKey = gu::decode64(fileKey_);
+                char decryptedFileKeyArr[gu::Aes_ctr_decryptor::FILE_KEY_LENGTH];
+                const unsigned char* encKeyPtr = reinterpret_cast<const unsigned char*>(encryptedFileKey.c_str());
+                unsigned char* decKeyPtr = reinterpret_cast<unsigned char*>(decryptedFileKeyArr);
+                gu::Aes_ctr_decryptor decryptor;
+                decryptor.open(mkPtr, iv);
+                decryptor.decrypt(decKeyPtr, encKeyPtr, encryptedFileKey.length());
+                decryptor.close();
+                unencryptedFileKey = std::string(decryptedFileKeyArr, gu::Aes_ctr_decryptor::FILE_KEY_LENGTH);
+            }
             // 3. pass file key to the mmap
             // Yes, I know this is ugly and IMMap should not have set_key() method,
             // and we should setup file key when MMapEnc decorator is created by factory,
@@ -754,8 +817,7 @@ namespace gcache
             // mmap_ is the reference, so no way to wrap it here
             // so just to not touch too much of the original code, and to not couple
             // RingBuffer class with MMapEnc class...
-            std::string fk("01234567890123456789012345678901");
-            mmap_.set_key(fk);
+            mmap_.set_key(unencryptedFileKey);
         }
 
         log_info << "GCache DEBUG: opened preamble:"

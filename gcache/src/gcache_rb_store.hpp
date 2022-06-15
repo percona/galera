@@ -215,7 +215,7 @@ namespace gcache
         static std::string const PR_KEY_ENCRYPTED;
         static std::string const PR_KEY_MK_ID;
         static std::string const PR_KEY_FILE_KEY;
-
+        static std::string const PR_KEY_ENC_CRC;
 
         void          write_preamble(bool synced);
         void          open_preamble(bool recover);

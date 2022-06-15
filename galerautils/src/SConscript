@@ -81,6 +81,7 @@ libgalerautilsxx_sources = [
     'gu_mmap.cpp',
     'gu_mmapenc.cpp',
     'gu_mmap_factory.cpp',
+    'gu_encryption.cpp',
     'gu_alloc.cpp',
     'gu_rset.cpp',
     'gu_resolver.cpp',

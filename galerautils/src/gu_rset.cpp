@@ -275,7 +275,14 @@ RecordSetOutBase::write_header (byte_t* const buf, ssize_t const size)
     if (check_type() != CHECK_NONE)
     {
         assert (csize <= size - off);
+//        fprintf(stderr, "KH: calculating checksum 1.1 ptr: x%llX, size: %ld\n",
+//          (unsigned long long)(buf + hdr_offset), off - hdr_offset);
+//        dumpMemory(buf + hdr_offset, off - hdr_offset);
         check_.append (buf + hdr_offset, off - hdr_offset); /* append header */
+
+//        fprintf(stderr, "KH: calculating checksum 1.2 ptr: x%llX, size: %ld\n",
+//          (unsigned long long)(buf + off), csize);
+//        dumpMemory(buf + off, csize);
         check_.gather (buf + off, csize);
     }
 
@@ -537,8 +544,14 @@ RecordSetInBase::checksum() const
     if (cs > 0) /* checksum records */
     {
         Hash check;
-
+//        fprintf(stderr, "KH: calculating checksum 2.1. ptr: x%llX, size: %ld\n",
+//          (unsigned long long)(head_ + begin_), serial_size() - begin_);
+//        dumpMemory(head_ + begin_, serial_size() - begin_);
         check.append (head_ + begin_, serial_size() - begin_); /* records */
+
+//        fprintf(stderr, "KH: calculating checksum 2.2. ptr: x%llX, size: %ld\n",
+//          (unsigned long long)(head_), begin_ - cs);
+//        dumpMemory(head_, begin_ - cs);
         check.append (head_, begin_ - cs);                     /* header  */
 
         assert(cs <= MAX_CHECKSUM_SIZE);
