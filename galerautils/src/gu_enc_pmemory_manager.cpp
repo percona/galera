@@ -137,7 +137,7 @@ void PMemoryManager::free(std::shared_ptr<PPage> page) {
     freePages_.push_back(page);
 }
 
-void PMemoryManager::reset() {
+void PMemoryManager::freeAll() {
     if(myPages_.size() != freePages_.size()) {
         // some pages were not released, restore clean state
         freePages_ = myPages_;

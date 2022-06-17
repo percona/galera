@@ -29,6 +29,7 @@ void swrite(const char* format, ...)
 void dumpMemory(void *ptr, size_t size) {
     S_DEBUG1("DUMP START x%llX, size: %ld", (unsigned long long)ptr, size);
     unsigned char *p = (unsigned char*)ptr;
+    p = p;  // make the compile happy when debug macros are disabled
     for (size_t i = 0; i < size; ++i) {
         if(i%16==0) {
             S_DEBUG0("\n");

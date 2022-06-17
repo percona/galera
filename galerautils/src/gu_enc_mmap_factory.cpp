@@ -5,11 +5,11 @@
 
 namespace gu {
 std::shared_ptr<IMMap> MMapFactory::create(FileDescriptor& fd, bool encrypt, size_t cachePageSize,
-  size_t cacheSize, size_t unencryptedHeaderSize) {
+  size_t cacheSize, bool syncOnDestroy, size_t unencryptedHeaderSize) {
     auto rawMmap = std::make_shared<gu::MMap>(fd);
     if (encrypt) {
         return std::make_shared<gu::EncMMap>(generateRandomKey(), rawMmap, cachePageSize, cacheSize,
-                                             unencryptedHeaderSize);
+                                             syncOnDestroy, unencryptedHeaderSize);
     }
     return rawMmap;
 }

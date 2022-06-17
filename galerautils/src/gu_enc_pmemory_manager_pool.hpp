@@ -17,6 +17,9 @@ class PMemoryManager;
 class PMemoryManagerPool {
 public:
     PMemoryManagerPool(size_t managersPoolSize);
+    PMemoryManagerPool(const PMemoryManagerPool&) = delete;
+    PMemoryManagerPool& operator=(const PMemoryManagerPool&) = delete;
+
     std::shared_ptr<PMemoryManager> allocate(size_t allocPageSize, size_t size);
     void free(std::shared_ptr<PMemoryManager>mgr);
 

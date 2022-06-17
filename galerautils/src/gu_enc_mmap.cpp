@@ -210,7 +210,8 @@ static void install_signal_handler() {
 
 
 EncMMap::EncMMap(const std::string& key, std::shared_ptr<MMap> rawmmap,
-                 size_t cachePageSize, size_t cacheSize, size_t encryptionStartOffset)
+                 size_t cachePageSize, size_t cacheSize, bool syncOnDestroy,
+                 size_t encryptionStartOffset)
 : key_(key)
 , mmapraw_(rawmmap)
 , pageSize_(cachePageSize)
@@ -231,7 +232,8 @@ EncMMap::EncMMap(const std::string& key, std::shared_ptr<MMap> rawmmap,
 , defaultPageProtection_(PROT_READ | PROT_WRITE )
 , lock_(ATOMIC_FLAG_INIT)
 , encryptor_()
-, decryptor_() {
+, decryptor_()
+, syncOnDestroy_(syncOnDestroy) {
 
     if (!mapped_)
     {
@@ -258,9 +260,9 @@ EncMMap::EncMMap(const std::string& key, std::shared_ptr<MMap> rawmmap,
     S_DEBUG_A("EncMMap::EncMMap() allocated pages cnt: %ld\n", pagesCnt_);
     page2protectionGuard_ = std::shared_ptr<int>(new int[pagesCnt_], [](int *p) { delete[] p; });
     page2protection_ = page2protectionGuard_.get();
-    memset(page2protection_, PROT_NONE, sizeof(int) * pagesCnt_);
     addEncMMap(this, base_, vMemSize_);
 
+    // we set up page2protection_ map inside
     set_key(key_);
 }
 
@@ -276,6 +278,8 @@ EncMMap::~EncMMap() {
 
     encryptor_.close();
     decryptor_.close();
+
+    memoryManager_.freeAll();
     memoryManagerManager.free(memoryManagerP_);
 }
 
@@ -306,9 +310,18 @@ void EncMMap::mprotectd(unsigned char *ptr, size_t size, int prot) const {
     if (0 != mprotect(ptr, size, prot)) {
         S_DEBUG1("mprotect failed. errno: %d, msg: %s\n", errno, strerror(errno));
     }
-    page2protection_[page_number(ptr)] = prot;
+
+    size_t firstPageNo = page_number(ptr);
+    if (gu_likely(size == pageSize_)) {
+        page2protection_[firstPageNo] = prot;
+    } else {
+        size_t pagesCnt = size/pageSize_;
+        pagesCnt = (size%pagesCnt_) ? pagesCnt+1 : pagesCnt;
+        memset(&(page2protection_[firstPageNo]), PROT_NONE, sizeof(int) * pagesCnt);
+    }
 }
 
+// todo: maybe use PageGluer here as well?
 void EncMMap::sync(void *addr, size_t length) const {
     unsigned char* addrU = reinterpret_cast<unsigned char*>(addr);
 
@@ -365,17 +378,17 @@ void EncMMap::sync() const {
         }
     }
     // sync the underlaying file
-    mmapraw_->sync(mmaprawPtr_, get_size());
+    mmapraw_->sync();
 }
 
 void EncMMap::unmap() {
-#if 0
-    sync();
-    for (auto p : vpage2ppage_) {
-        memoryManager_.free(p.second);
+    // todo: For RecordSet cache and GCache overflow pages this sync is not needed
+    // if we unmap it means we will never map again, so we are not interested
+    // with the content anymore.
+    if (syncOnDestroy_) {
+        sync();
     }
-    vpage2ppage_.clear();
-#endif
+
     if (munmap (mmap_ptr_, get_size() + pageSize_) < 0)
     {
         gu_throw_error(errno) << "munmap(" << ptr2ull(mmap_ptr_) << ", " << get_size()
@@ -392,11 +405,18 @@ void EncMMap::set_key(const std::string& key) {
 
     key_ = key;
     assert(key_.length() >= Aes_ctr_encryptor::FILE_KEY_LENGTH);
-    const unsigned char *kkey = (const unsigned char*)key_.c_str();
+    unsigned char *kkey = (unsigned char*)key_.c_str();
     encryptor_.close();
     decryptor_.close();
     encryptor_.open(kkey, iv);
     decryptor_.open(kkey, iv);
+
+    // We just set the key. Cache may contain some data, which was decrypted
+    // with old key. If we flush now, we will spoil the data.
+    // Discard everything cached so far.
+    mprotectd(base_, vMemSize_, PROT_NONE);
+    memoryManager_.freeAll();
+    vpage2ppage_.clear();
 }
 
 

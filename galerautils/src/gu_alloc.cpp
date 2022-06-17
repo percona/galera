@@ -66,7 +66,7 @@ gu::Allocator::FilePage::FilePage (const std::string& name,
     fd_  (name, size, false, false),
 #endif /* PXC */
     mmapptr_   (MMapFactory::create(fd_, g_encryptOffPages,
-                g_encryptCachePageSize, std::min(g_encryptCacheSize, (size_t)size), 0)),
+                g_encryptCachePageSize, std::min(g_encryptCacheSize, (size_t)size), false, 0)),
     mmap_      (*mmapptr_)
 {
     base_ptr_ = static_cast<byte_t*>(mmap_.get_ptr());

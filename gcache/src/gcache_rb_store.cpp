@@ -97,7 +97,7 @@ namespace gcache
 #else
         fd_        (name, check_size(size)),
 #endif /* PXC */
-        mmapptr_   (gu::MMapFactory::create(fd_, encrypt, encryptCachePageSize, encryptCacheSize, static_cast<size_t>(PREAMBLE_LEN))),
+        mmapptr_   (gu::MMapFactory::create(fd_, encrypt, encryptCachePageSize, encryptCacheSize, false, static_cast<size_t>(PREAMBLE_LEN))),
         mmap_      (*mmapptr_),
         preamble_  (static_cast<char*>(mmap_.get_ptr())),
         header_    (reinterpret_cast<int64_t*>(preamble_ + PREAMBLE_LEN)),
@@ -1178,6 +1178,7 @@ namespace gcache
 
         if (!seqno2ptr_.empty())
         {
+            fprintf(stderr, "seqno2ptr_ not empty\n");
             assert(next_ <= first_ || size_trail_ == 0);
             assert(next_ >  first_ || size_trail_ >  0);
 
@@ -1186,7 +1187,9 @@ namespace gcache
             assert(*r);
             seqno_t const seqno_max(seqno2ptr_.index_back());
             seqno_t       seqno_min(seqno2ptr_.index_front());
-
+            fprintf(stderr, "min: %d, max: %d, lowest: %d\n",
+              seqno_min, seqno_max, lowest);
+            
             /* need to search for seqno gaps */
             assert(seqno_max >= lowest);
             if (lowest == seqno_max)

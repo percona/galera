@@ -5,7 +5,7 @@
 
 namespace gu {
 
-#if 0
+#if 1
 #define S_DEBUG0(format)
 #define S_DEBUG1(format, args...)
 #define S_DEBUG2(format, args...)

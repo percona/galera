@@ -1,8 +1,11 @@
 #include "gu_enc_utils.hpp"
+#include "gu_logger.hpp"
 #include <boost/archive/iterators/binary_from_base64.hpp>
 #include <boost/archive/iterators/base64_from_binary.hpp>
 #include <boost/archive/iterators/transform_width.hpp>
 #include <boost/algorithm/string.hpp>
+#include <openssl/rand.h>
+#include <openssl/err.h>
 
 // Inspired by
 // https://stackoverflow.com/questions/7053538/how-do-i-encode-a-string-to-base64-using-only-boost
@@ -36,8 +39,19 @@ std::string decode64(const std::string& base64)
 }
 
 std::string generateRandomKey() {
-    static int keyLength = 32;
-    return "01234567890123456789012345678901";
+    // return "01234567890123456789012345678901";
+    static const size_t keyLength = 32;
+    char buf[keyLength];
+    int rc = RAND_bytes(reinterpret_cast<unsigned char*>(buf), keyLength);
+    if (!rc) {
+      ERR_clear_error();
+      // fall back to old good rand...
+      log_error << "Failed to generate random key using SSL.";
+      for (size_t i = 0; i < keyLength; ++i) {
+        buf[i] = rand() % 255;
+      }
+    }
+    return std::string(buf, keyLength);
 }
 
 }  // namespace

@@ -34,7 +34,6 @@ std::shared_ptr<PMemoryManager> PMemoryManagerPool::allocate(size_t allocPageSiz
 void PMemoryManagerPool::free(std::shared_ptr<PMemoryManager>mgr) {
     std::lock_guard<std::mutex> l(mtx_);
     if (poolSize_ < poolSizeMax_) {
-        mgr->reset();  // todo: move this responsibility to the client
         managers_.insert(mgr);
         poolSize_++;
         S_DEBUG1("PMemoryManager returned to pool. Pool size: %ld/%ld\n", poolSize_, poolSizeMax_);

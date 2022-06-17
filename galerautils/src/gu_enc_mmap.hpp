@@ -25,7 +25,13 @@ class EncMMap : public IMMap
 {
 public:
     EncMMap(const std::string &key, std::shared_ptr<MMap> mmap,
-            size_t cachePageSize, size_t cacheSize, size_t encryptionStartOffset = 0);
+            size_t cachePageSize, size_t cacheSize, bool syncOnDestroy = false,
+            size_t encryptionStartOffset = 0);
+    ~EncMMap();
+
+    EncMMap(const EncMMap&) = delete;
+    EncMMap operator=(const EncMMap&) = delete;
+
     size_t get_size() const override;
     void*  get_ptr() const override;
 
@@ -34,8 +40,6 @@ public:
     void sync() const override;
     void unmap() override;
     void set_key(const std::string& key) override;
-
-    ~EncMMap();
 
     void handle_signal(siginfo_t*);
 
@@ -67,14 +71,12 @@ private:
     std::atomic_flag lock_;
     mutable Aes_ctr_encryptor encryptor_;
     mutable Aes_ctr_decryptor decryptor_;
+    bool syncOnDestroy_;
 
     unsigned char* page_start(unsigned long long pageNo) const;
     unsigned char* page_start(unsigned char* addr) const;
     size_t page_number(unsigned char* addr) const;
     void mprotectd(unsigned char *ptr, size_t size, int prot) const;
-
-    EncMMap(const EncMMap&);
-    EncMMap operator=(const EncMMap&);
 };
 
 } /* namespace gu */

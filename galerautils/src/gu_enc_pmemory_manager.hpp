@@ -20,13 +20,16 @@ class PMemoryManager {
 public:
     PMemoryManager(size_t pagesCnt, size_t allocPageSize);
     ~PMemoryManager();
+    PMemoryManager(const gu::PMemoryManager&) = delete;
+    PMemoryManager operator=(const gu::PMemoryManager&) = delete;
+
     std::shared_ptr<PPage> alloc();
     void free(std::shared_ptr<PPage> page);
     /* Reset manager to its initial state. All pages are marked as free.
        This is useful for clients who decide to stop usage of physical memory
        without freeing allocated pages (e.g. they no longer care about the data)
     */
-    void reset();
+    void freeAll();
     void GetCreateParams(size_t* size, size_t* allocPageSize);
 
 private:
@@ -39,9 +42,6 @@ private:
     bool mapped_;
     size_t allocPagesCnt_;
     size_t allocPageSize_;
-
-    PMemoryManager(const gu::PMemoryManager&);
-    PMemoryManager operator=(const gu::PMemoryManager&);
 
     bool createTmpFile();
 };
