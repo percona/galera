@@ -762,11 +762,14 @@ namespace gcache
                 crc.append(fileKey_.c_str(), fileKey_.length());
                 crc_val = crc.get();
             }
-            if (enc_crc == 0 || crc_val != enc_crc) {
-                log_warn << "Encryption header CRC mismatch (or missing)."
+            if (crc_val != enc_crc) {
+                log_warn << "Encryption header CRC mismatch."
                             << " Calculated: " << crc_val
                             << " Expected: " << enc_crc;
-                // this will trigger new file key generation and GCache reset
+            }
+            if (enc_crc == 0 || crc_val != enc_crc) {
+                // No crc info (no header?) or crc mismatch.
+                // This will trigger new file key generation and GCache reset
                 fileKey_.clear();
                 // master key can be spoiled as well
                 masterKeyId_ = 0;
