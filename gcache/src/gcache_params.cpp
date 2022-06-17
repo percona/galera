@@ -33,7 +33,7 @@ static const std::string GCACHE_PARAMS_FREEZE_PURGE_SEQNO("gcache.freeze_purge_a
 static const std::string GCACHE_DEFAULT_FREEZE_PURGE_SEQNO("-1");
 #endif /* PXC */
 static const std::string GCACHE_PARAMS_ENCRYPTION("gcache.encryption");
-static const std::string GCACHE_DEFAULT_ENCRYPTION("no");
+static const std::string GCACHE_DEFAULT_ENCRYPTION("yes");
 static const std::string GCACHE_PARAMS_ENCRYPTION_CACHE_PAGE_SIZE("gcache.encryption_cache_page_size");
 static const std::string GCACHE_DEFAULT_ENCRYPTION_CACHE_PAGE_SIZE("32K");
 static const std::string GCACHE_PARAMS_ENCRYPTION_CACHE_SIZE("gcache.encryption_cache_size");

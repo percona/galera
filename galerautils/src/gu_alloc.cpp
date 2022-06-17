@@ -219,7 +219,7 @@ gu::Allocator::~Allocator ()
 }
 
 static const std::string ALLOCATOR_PARAMS_DISK_PAGES_ENCRYPTION("allocator.disk_pages_encryption");
-static const std::string ALLOCATOR_DEFAULT_DISK_PAGES_ENCRYPTION("no");
+static const std::string ALLOCATOR_DEFAULT_DISK_PAGES_ENCRYPTION("yes");
 static const std::string ALLOCATOR_PARAMS_ENCRYPTION_CACHE_PAGE_SIZE("allocator.encryption_cache_page_size");
 static const std::string ALLOCATOR_DEFAULT_ENCRYPTION_CACHE_PAGE_SIZE("32K");
 static const std::string ALLOCATOR_PARAMS_ENCRYPTION_CACHE_SIZE("allocator.encryption_cache_size");
