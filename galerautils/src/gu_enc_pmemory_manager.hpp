@@ -9,7 +9,7 @@ namespace gu {
 struct PPage {
     int fd_;
     size_t offset_;
-    char* ptr_;
+    unsigned char* ptr_;
 };
 
 /* PMemoryManger acts as the allocator of physical pages (PPage) for
@@ -31,7 +31,7 @@ public:
 
 private:
     size_t createSize_;
-    char* base_;
+    unsigned char* base_;
     size_t size_;
     std::vector<std::shared_ptr<PPage>> freePages_;
     std::vector<std::shared_ptr<PPage>> myPages_;

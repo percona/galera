@@ -2,6 +2,7 @@
 #include "gu_throw.hpp"
 #include "gu_logger.hpp"
 #include "gu_enc_debug.hpp"
+#include "gu_enc_utils.hpp"
 #include "gu_enc_pmemory_manager.hpp"
 #include "gu_enc_pmemory_manager_pool.hpp"
 
@@ -17,8 +18,6 @@
 
 namespace gu {
 
-#define ptr2ull(ptr) ((unsigned long long)ptr)
-
 #define REAL_ENCRYPTION 1
 
 // maximum number of PMemoryManagers waiting in the pool
@@ -29,12 +28,12 @@ PMemoryManagerPool memoryManagerManager(MANAGERS_POOL_SIZE);
 static std::atomic_flag encMmapsLock = ATOMIC_FLAG_INIT;
 
 struct EncMMapDescriptor {
-    char*   start_;
-    char*   end_;
+    unsigned char*   start_;
+    unsigned char*   end_;
 };
 std::map<EncMMap*, EncMMapDescriptor> encMMaps;
 
-static void addEncMMap(EncMMap *mmap, char* ptr, size_t size) {
+static void addEncMMap(EncMMap *mmap, unsigned char* ptr, size_t size) {
     while (encMmapsLock.test_and_set(std::memory_order_acquire)) {
         std::this_thread::yield();
     }
@@ -50,7 +49,7 @@ static void delEncMMap(EncMMap *mmap) {
     encMmapsLock.clear(std::memory_order_release);
 }
 
-static EncMMap* getEncMMap(char* ptr) {
+static EncMMap* getEncMMap(unsigned char* ptr) {
     for (auto m : encMMaps) {
         if (ptr >= m.second.start_  &&  ptr < m.second.end_) {
             return m.first;
@@ -68,7 +67,7 @@ void EncMMap::dumpMappings() {
 
         for (auto mm : encMMaps) {
             S_DEBUG_A("Mappings for EncMMap x%llX (x%llX - x%llX) START\n",
-              (unsigned long long)mm.first, (unsigned long long)mm.second.start_, (unsigned long long)mm.second.end_);
+              ptr2ull(mm.first), ptr2ull(mm.second.start_), ptr2ull(mm.second.end_));
             mm.first->dumpMappingsInt();
         }
     encMmapsLock.clear(std::memory_order_release);
@@ -81,24 +80,24 @@ void EncMMap::dumpMappingsInt()
 {
     S_DEBUG_A0("vpage -> ppage mappings start\n");
     for (auto kv : vpage2ppage_) {
-        S_DEBUG_A("vpage: x%llX, ppage: x%llX\n", (unsigned long long)kv.first, (unsigned long long)kv.second->ptr_);
+        S_DEBUG_A("vpage: x%llX, ppage: x%llX\n", ptr2ull(kv.first), ptr2ull(kv.second->ptr_));
     }
     S_DEBUG_A0("vpage -> ppage mappings end\n");
 }
 
 
 // Helper methods
-char* EncMMap::page_start(unsigned long long pageNo) const {
+unsigned char* EncMMap::page_start(unsigned long long pageNo) const {
     return base_ + pageSize_ * pageNo;
 }
 
-char* EncMMap::page_start(char* addr) const {
+unsigned char* EncMMap::page_start(unsigned char* addr) const {
     unsigned long long addr_u = ptr2ull(addr);
     unsigned long long page_start = (addr_u / pageSize_) * pageSize_;
-    return (char*)page_start;
+    return reinterpret_cast<unsigned char*>(page_start);
 }
 
-size_t EncMMap::page_number(char* addr) const {
+size_t EncMMap::page_number(unsigned char* addr) const {
     unsigned long long offset = ptr2ull(addr) - ptr2ull(base_);
     size_t pageNo = offset / pageSize_;
     return pageNo;
@@ -106,7 +105,7 @@ size_t EncMMap::page_number(char* addr) const {
 
 
 // encrption / decryption
-void EncMMap::encrypt(char* dst, char* src, size_t size, size_t pageNumber) const {
+void EncMMap::encrypt(unsigned char* dst, unsigned char* src, size_t size, size_t pageNumber) const {
     // the last page may be not full
     size = (pageNumber == pagesCnt_-1) ? lastPageSize_ : size;
 #if REAL_ENCRYPTION
@@ -123,14 +122,14 @@ void EncMMap::encrypt(char* dst, char* src, size_t size, size_t pageNumber) cons
     int encryptedSize = size - unencryptedSize;
     if(encryptedSize > 0) {
       encryptor_.set_stream_offset(pageStartOffset + unencryptedSize);
-      encryptor_.encrypt((unsigned char*)dst, (unsigned char*)src, size - unencryptedSize);
+      encryptor_.encrypt(dst, src, size - unencryptedSize);
     }
 #else
     memcpy(dst, src, size);
 #endif
 }
 
-void EncMMap::decrypt(char* dst, char* src, size_t size, size_t pageNumber) const {
+void EncMMap::decrypt(unsigned char* dst, unsigned char* src, size_t size, size_t pageNumber) const {
     // the last page may be not full
     size = (pageNumber == pagesCnt_-1) ? lastPageSize_ : size;
 #if REAL_ENCRYPTION
@@ -147,7 +146,7 @@ void EncMMap::decrypt(char* dst, char* src, size_t size, size_t pageNumber) cons
     int encryptedSize = size - unencryptedSize;
     if(encryptedSize > 0) {
         decryptor_.set_stream_offset(pageStartOffset + unencryptedSize);
-        decryptor_.decrypt((unsigned char*)dst, (unsigned char*)src, size - unencryptedSize);
+        decryptor_.decrypt(dst, src, size - unencryptedSize);
     }
 #else
     memcpy(dst, src, size);
@@ -171,7 +170,7 @@ void signal_handler(int sig, siginfo_t* info, void* ctx) {
         S_DEBUG_A0("signal_handler collision\n");
         return;
     }
-    char *addr = static_cast<char*>(info->si_addr);
+    unsigned char *addr = static_cast<unsigned char*>(info->si_addr);
     S_DEBUG1("addr: x%llX\n", ptr2ull(addr));
     EncMMap*  encmmap = getEncMMap(addr);
     encMmapsLock.clear(std::memory_order_release);
@@ -215,10 +214,10 @@ EncMMap::EncMMap(const std::string& key, std::shared_ptr<MMap> rawmmap,
 : key_(key)
 , mmapraw_(rawmmap)
 , pageSize_(cachePageSize)
-, mmaprawPtr_(mmapraw_->get_ptr())
+, mmaprawPtr_(static_cast<unsigned char*>(mmapraw_->get_ptr()))
 , vMemSize_(mmapraw_->get_size())
 // mmap 2 pages more: 1st for aligning start, 2nd if the last underlying page is not aligned
-, mmap_ptr_(static_cast<char*>(mmap(nullptr, vMemSize_ + 2*pageSize_, PROT_NONE, MAP_ANONYMOUS|MAP_PRIVATE, -1, 0)))
+, mmap_ptr_(static_cast<unsigned char*>(mmap(nullptr, vMemSize_ + 2*pageSize_, PROT_NONE, MAP_ANONYMOUS|MAP_PRIVATE, -1, 0)))
 , base_(nullptr)
 , memoryManagerP_(memoryManagerManager.allocate(cachePageSize, cacheSize))
 , memoryManager_(*memoryManagerP_)
@@ -241,7 +240,7 @@ EncMMap::EncMMap(const std::string& key, std::shared_ptr<MMap> rawmmap,
 
     // we need base_ to be aligned with pageSize_ for easier calculations later
     // here we will loose at most pageSize_ at the beginning
-    base_ = (char*)(((ptr2ull(mmap_ptr_) + pageSize_) / pageSize_) * pageSize_);
+    base_ = reinterpret_cast<unsigned char*>(((ptr2ull(mmap_ptr_) + pageSize_) / pageSize_) * pageSize_);
 
     S_DEBUG_A("EncMMap::EncMMap() this: x%llX, mmap_ptr: x%llX aligned mapping: (x%llX - x%llX) (%ld bytes)\n",
         ptr2ull(this), ptr2ull(mmap_ptr_), ptr2ull(base_), ptr2ull(base_) + vMemSize_, vMemSize_);
@@ -301,42 +300,44 @@ void EncMMap::dont_need() const {
     mmapraw_->dont_need();
 }
 
-void EncMMap::mprotectd(void *ptr, size_t size, int prot) const {
+void EncMMap::mprotectd(unsigned char *ptr, size_t size, int prot) const {
     S_DEBUG1("mprotect ptr: x%llX, size: %ld, prot: %d\n",
-      (unsigned long long)ptr, size, prot);
+      ptr2ull(ptr), size, prot);
     if (0 != mprotect(ptr, size, prot)) {
         S_DEBUG1("mprotect failed. errno: %d, msg: %s\n", errno, strerror(errno));
     }
-    page2protection_[page_number((char*)ptr)] = prot;
+    page2protection_[page_number(ptr)] = prot;
 }
 
 void EncMMap::sync(void *addr, size_t length) const {
-    int firstPageToSync = page_number((char*)addr);
-    char* vpageEnd = (char*)addr + length;
+    unsigned char* addrU = reinterpret_cast<unsigned char*>(addr);
+
+    int firstPageToSync = page_number(addrU);
+    unsigned char* vpageEnd = addrU + length;
     int lastPageToSync = page_number(vpageEnd);
 
     // calculate the real lenght to sync. It is pages bound
-    char* syncAddrStart = page_start(firstPageToSync);
-    char* syncAddrEnd = page_start(lastPageToSync) + pageSize_;
+    unsigned char* syncAddrStart = page_start(firstPageToSync);
+    unsigned char* syncAddrEnd = page_start(lastPageToSync) + pageSize_;
     size_t realSyncLen = syncAddrEnd - syncAddrStart;
-    size_t syncStartOffset = base_ - (char*)addr;
+    size_t syncStartOffset = base_ - addrU;
 
     for (auto kv = vpage2ppage_.begin(); kv != vpage2ppage_.end(); ++kv) {
-        int pageNo = page_number((char*)kv->first);
+        int pageNo = page_number(kv->first);
         if(pageNo < firstPageToSync || pageNo > lastPageToSync) {
             continue;
         }
 
         int protection = page2protection_[pageNo];
-        char* vpageStart = (char*)kv->first;
+        unsigned char* vpageStart = kv->first;
 
         S_DEBUG1("sync pageNo: %d, prot: %d (x%llX - x%llX)\n",
-            pageNo, page2protection_[pageNo], (unsigned long long)vpageStart, (unsigned long long)vpageStart+pageSize_);
+            pageNo, page2protection_[pageNo], ptr2ull(vpageStart), ptr2ull(vpageStart)+pageSize_);
 
         if(protection == (PROT_READ | PROT_WRITE)) {
             // flush
             mprotectd(vpageStart, pageSize_, PROT_READ);
-            char* dstPtr = (char*)mmaprawPtr_ + pageNo*pageSize_;
+            unsigned char* dstPtr = mmaprawPtr_ + pageNo * pageSize_;
             encrypt(dstPtr, vpageStart, pageSize_, pageNo);
             S_DEBUG0("    -> flushed\n");
             mprotectd(vpageStart, pageSize_, defaultPageProtection_);
@@ -344,20 +345,20 @@ void EncMMap::sync(void *addr, size_t length) const {
     }
     // sync the underlaying file
     // we need to sync whole alloc pages
-    mmapraw_->sync((char*)mmaprawPtr_+syncStartOffset, realSyncLen);
+    mmapraw_->sync(mmaprawPtr_+syncStartOffset, realSyncLen);
  }
 
 void EncMMap::sync() const {
     for (auto kv = vpage2ppage_.begin(); kv != vpage2ppage_.end(); ++kv) {
-        int pageNo = page_number((char*)kv->first);
+        int pageNo = page_number(kv->first);
         int protection = page2protection_[pageNo];
-        char* vpageStart = (char*)kv->first;
+        unsigned char* vpageStart = kv->first;
         S_DEBUG1("sync pageNo: %d, prot: %d (x%llX - x%llX)\n",
-            pageNo, page2protection_[pageNo], (unsigned long long)vpageStart, (unsigned long long)vpageStart+pageSize_);
+            pageNo, page2protection_[pageNo], ptr2ull(vpageStart), ptr2ull(vpageStart)+pageSize_);
         if(protection == (PROT_READ | PROT_WRITE)) {
             // flush
             mprotectd(vpageStart, pageSize_, PROT_READ);
-            char* dstPtr = (char*)mmaprawPtr_ + pageNo*pageSize_;
+            unsigned char* dstPtr = mmaprawPtr_ + pageNo*pageSize_;
             encrypt(dstPtr, vpageStart, pageSize_, pageNo);
             S_DEBUG0("    -> flushed\n");
             mprotectd(vpageStart, pageSize_, defaultPageProtection_);
@@ -381,7 +382,7 @@ void EncMMap::unmap() {
                                 << ") failed";
     }
     S_DEBUG_A("EncMMap::unmap() (x%llX - x%llX) (%ld bytes)\n",
-        (unsigned long long)base_, (unsigned long long)base_ + vMemSize_, vMemSize_);
+        ptr2ull(base_), ptr2ull(base_) + vMemSize_, vMemSize_);
     base_ = nullptr;
     mapped_ = false;
 }
@@ -403,8 +404,8 @@ void EncMMap::set_key(const std::string& key) {
    continous. In such a case glue them to avoid partial encryptions.
    The following class encapsulates gluing logic.  */
 struct PageGluer {
-    char* src_;
-    char* dst_;
+    unsigned char* src_;
+    unsigned char* dst_;
     size_t size_;
     int minPageNo_;
     int prevPageNo_;
@@ -413,7 +414,7 @@ struct PageGluer {
 
     PageGluer(): src_(nullptr), dst_(nullptr), size_(0),
                  minPageNo_(-1), prevPageNo_(-1), gluedPages_(0) {}
-    bool glue(int pageNo, char* src, char* dst, size_t size) {
+    bool glue(int pageNo, unsigned char* src, unsigned char* dst, size_t size) {
         if (prevPageNo_ == -1) {
             prevPageNo_ = pageNo;
             minPageNo_ = pageNo;
@@ -446,9 +447,9 @@ struct PageGluer {
 // signal handler. The whole magic happens here
 void EncMMap::handle_signal(siginfo_t* info) {
     S_DEBUG0("handle_signal >>>>>>>>>>>\n");
-    char* p = static_cast<char*>(info->si_addr);
+    unsigned char* p = static_cast<unsigned char*>(info->si_addr);
     size_t reqPageNo = page_number(p);
-    char* reqPageStart = page_start(p);
+    unsigned char* reqPageStart = page_start(p);
 
     S_DEBUG1("this: x%llX, p: x%llX, reqPageNo: %llu, (x%llX - x%llX)\n",
       ptr2ull(this), ptr2ull(p), reqPageNo, ptr2ull(reqPageStart), ptr2ull(reqPageStart)+pageSize_);
@@ -464,7 +465,7 @@ void EncMMap::handle_signal(siginfo_t* info) {
         if (!p) {
             size_t freedCout = 0;
             size_t flushedCnt = 0;
-            char *vpageStart = nullptr;
+            unsigned char *vpageStart = nullptr;
 
             // free FLUSH_LIMIT pages, no more
             const static int FLUSH_LIMIT = 100;
@@ -474,20 +475,23 @@ void EncMMap::handle_signal(siginfo_t* info) {
             PageGluer gluer;
             for (auto& kv : vpage2ppage_) {
                 //S_DEBUG1("freeing ppages. allocated: %d\n", vpage2ppage_.size());
-                size_t pageNo = page_number((char*)kv.first);
+                size_t pageNo = page_number(kv.first);
                 //S_DEBUG1("pageNo: %d\n", pageNo);
                 int protection = page2protection_[pageNo];
-                vpageStart = (char*)kv.first;
+                vpageStart = kv.first;
                 S_DEBUG1("free pageNo: %d, prot: %d (x%llX - x%llX)\n",
-                  pageNo, protection, (unsigned long long)vpageStart, (unsigned long long)vpageStart+pageSize_);
+                  pageNo, protection, ptr2ull(vpageStart), ptr2ull(vpageStart)+pageSize_);
                 if(protection == (PROT_READ | PROT_WRITE)) {
                     // flush
-                    char* dstPtr = (char*)mmaprawPtr_ + pageNo*pageSize_;
+                    unsigned char* dstPtr = mmaprawPtr_ + pageNo*pageSize_;
                     mprotectd(vpageStart, pageSize_, PROT_READ);
 
                     size_t pageSize = (pageNo == pagesCnt_-1) ? lastPageSize_ : pageSize_;
                     if (gluer.glue(pageNo, vpageStart, dstPtr, pageSize)) {
                         S_DEBUG0("glued\n");
+                        // logically should be done in the loop below, but
+                        // do it here to avoid pageNo propagation/recalculation
+                        page2protection_[pageNo] = PROT_NONE;
                         if (--limit == 0) break;
                         continue;
                     }
@@ -501,7 +505,7 @@ void EncMMap::handle_signal(siginfo_t* info) {
                     S_DEBUG0("    -> flushed\n");
                 }
                 // logically should be done in the loop below, but
-                // do it here to avoid pageNo propagation
+                // do it here to avoid pageNo propagation/recalculation
                 page2protection_[pageNo] = PROT_NONE;
 
                 freedCout++;
@@ -516,7 +520,7 @@ void EncMMap::handle_signal(siginfo_t* info) {
             // synced above
             limit = FLUSH_LIMIT;
             for (auto kv = vpage2ppage_.begin(); kv != vpage2ppage_.end();) {
-                vpageStart = (char*)kv->first;
+                vpageStart = kv->first;
                 if (mmap(vpageStart, pageSize_, PROT_NONE,
                     MAP_ANONYMOUS|MAP_PRIVATE|MAP_FIXED, -1, 0) == MAP_FAILED) {
                     S_DEBUG0("unmap failed!");
@@ -535,7 +539,7 @@ void EncMMap::handle_signal(siginfo_t* info) {
         }
 
         // this page
-        char* srcPtr = (char*)mmaprawPtr_ + reqPageNo*pageSize_;
+        unsigned char* srcPtr = mmaprawPtr_ + reqPageNo*pageSize_;
 
         decrypt(p->ptr_, srcPtr, pageSize_, reqPageNo);
 
@@ -547,8 +551,8 @@ void EncMMap::handle_signal(siginfo_t* info) {
         page2protection_[reqPageNo] = defaultPageProtection_;
         vpage2ppage_[reqPageStart] = p;
         S_DEBUG1("read reqPageNo: %d (x%llX - x%llX) PROT_NONE -> PROT_READ\n",
-            reqPageNo, (unsigned long long)reqPageStart,
-            (unsigned long long)reqPageStart+pageSize_);
+            reqPageNo, ptr2ull(reqPageStart),
+            ptr2ull(reqPageStart)+pageSize_);
 
         // read ahead  // todo: implement this for recovery
         static size_t READ_AHEAD_CNT = 0; // how many pages should we read ahead
@@ -558,8 +562,8 @@ void EncMMap::handle_signal(siginfo_t* info) {
             // only not mapped pages
             if (page2protection_[reqPageNo] != PROT_NONE) {
                 S_DEBUG1("read ahead reqPageNo: %d (x%llX - x%llX) already mapped. prot: %d\n",
-                  reqPageNo, (unsigned long long)page_start(reqPageNo),
-                  (unsigned long long)page_start(reqPageNo)+pageSize_,
+                  reqPageNo, ptr2ull(page_start(reqPageNo)),
+                  ptr2ull(page_start(reqPageNo))+pageSize_,
                   page2protection_[reqPageNo]);
                 continue;
             }
@@ -567,11 +571,11 @@ void EncMMap::handle_signal(siginfo_t* info) {
             if (!p) {
                 // keep it simple for now. No swaping when read ahead.
                 S_DEBUG1("read ahead reqPageNo: %d (x%llX - x%llX) no free pages.\n",
-                  reqPageNo, (unsigned long long)page_start(reqPageNo),
-                  (unsigned long long)page_start(reqPageNo)+pageSize_);
+                  reqPageNo, ptr2ull(page_start(reqPageNo)),
+                  ptr2ull(page_start(reqPageNo))+pageSize_);
                 break;
             }
-            char* srcPtr = (char*)mmaprawPtr_ + reqPageNo*pageSize_;
+            unsigned char* srcPtr = mmaprawPtr_ + reqPageNo*pageSize_;
             decrypt(p->ptr_, srcPtr, pageSize_, reqPageNo);
             reqPageStart = page_start(reqPageNo);
 
@@ -580,8 +584,8 @@ void EncMMap::handle_signal(siginfo_t* info) {
             vpage2ppage_[reqPageStart] = p;
             totalReadAhead++;
             S_DEBUG1("read ahead reqPageNo: %d (x%llX - x%llX) PROT_NONE -> PROT_READ\n",
-              reqPageNo, (unsigned long long)reqPageStart,
-              (unsigned long long)reqPageStart+pageSize_);
+              reqPageNo, ptr2ull(reqPageStart),
+              ptr2ull(reqPageStart)+pageSize_);
         }
         S_DEBUG1("Read ahead %ld pages\n", totalReadAhead);
     } else if (page2protection_[reqPageNo] == PROT_READ) {

@@ -44,21 +44,21 @@ public:
 
     static void dumpMappings();
 private:
-    void encrypt(char* dst, char* src, size_t size, size_t pageNumber) const;
-    void decrypt(char* dst, char* src, size_t size, size_t pageNumber) const;
+    void encrypt(unsigned char* dst, unsigned char* src, size_t size, size_t pageNumber) const;
+    void decrypt(unsigned char* dst, unsigned char* src, size_t size, size_t pageNumber) const;
     void dumpMappingsInt();
     std::string key_;
     std::shared_ptr<MMap> mmapraw_;
     size_t pageSize_;
-    void* mmaprawPtr_;
+    unsigned char* mmaprawPtr_;
     size_t vMemSize_;
-    char* mmap_ptr_;
-    char* base_;
+    unsigned char* mmap_ptr_;
+    unsigned char* base_;
     std::shared_ptr<PMemoryManager> memoryManagerP_;
     PMemoryManager &memoryManager_;
     std::shared_ptr<int> page2protectionGuard_;
     int* page2protection_;
-    std::map<void*, std::shared_ptr<PPage>> vpage2ppage_;
+    std::map<unsigned char*, std::shared_ptr<PPage>> vpage2ppage_;
     size_t pagesCnt_;
     bool mapped_;
     size_t lastPageSize_;
@@ -68,10 +68,10 @@ private:
     mutable Aes_ctr_encryptor encryptor_;
     mutable Aes_ctr_decryptor decryptor_;
 
-    char* page_start(unsigned long long pageNo) const;
-    char* page_start(char* addr) const;
-    size_t page_number(char* addr) const;
-    void mprotectd(void *ptr, size_t size, int prot) const;
+    unsigned char* page_start(unsigned long long pageNo) const;
+    unsigned char* page_start(unsigned char* addr) const;
+    size_t page_number(unsigned char* addr) const;
+    void mprotectd(unsigned char *ptr, size_t size, int prot) const;
 
     EncMMap(const EncMMap&);
     EncMMap operator=(const EncMMap&);

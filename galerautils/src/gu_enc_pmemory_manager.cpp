@@ -1,5 +1,6 @@
 #include "gu_enc_pmemory_manager.hpp"
 #include "gu_enc_debug.hpp"
+#include "gu_enc_utils.hpp"
 #include "gu_throw.hpp"
 
 #include <sys/mman.h>
@@ -27,6 +28,7 @@ PMemoryManager::PMemoryManager(size_t size, size_t allocPageSize)
 , base_(0)
 , size_(0)
 , freePages_()
+, myPages_()
 , fd_(-1)
 , mapped_(false)
 , allocPagesCnt_(0)
@@ -52,7 +54,7 @@ PMemoryManager::PMemoryManager(size_t size, size_t allocPageSize)
     if (createTmpFile()) {
         gu_throw_error(errno) << "PMemoryManager::PMemoryManager() creation of tempfile failed";
     }
-    base_ = static_cast<char*>(mmap(nullptr, size_, PROT_READ|PROT_WRITE, MAP_SHARED, fd_, 0));
+    base_ = static_cast<unsigned char*>(mmap(nullptr, size_, PROT_READ|PROT_WRITE, MAP_SHARED, fd_, 0));
     mapped_ = (base_ != MAP_FAILED);
     if (!mapped_)
     {
@@ -68,7 +70,7 @@ PMemoryManager::PMemoryManager(size_t size, size_t allocPageSize)
     S_DEBUG_A("PMemoryManager::PMemoryManager() (x%llX - x%llX). "
               "CpuPageSize: %ld, allocPageSize: %ld, allocPagesCnt: %ld, "
               "size requested: %ld, size allocated: %ld\n",
-      (unsigned long long)base_, (unsigned long long)base_ + size_,
+      ptr2ull(base_), ptr2ull(base_) + size_,
       getCpuPageSize(), allocPageSize_, allocPagesCnt_, createSize_, size_);
 
     for (size_t i = 0; i < allocPagesCnt_; ++i) {
@@ -84,7 +86,7 @@ PMemoryManager::PMemoryManager(size_t size, size_t allocPageSize)
 
 PMemoryManager::~PMemoryManager() {
     S_DEBUG_A("+++PMemoryManager::~PMemoryManager() (x%llX - x%llX)\n",
-      (unsigned long long)base_, (unsigned long long)base_ + size_);
+      ptr2ull(base_), ptr2ull(base_) + size_);
 
     if (freePages_.size() != allocPagesCnt_) {
         S_DEBUG_A("Some pages still allocated. Free pages cnt: %d\n", freePages_.size());
@@ -97,7 +99,7 @@ PMemoryManager::~PMemoryManager() {
     }
     mapped_ = false;
     S_DEBUG_A("---PMemoryManager::~PMemoryManager() (x%llX - x%llX)\n",
-      (unsigned long long)base_, (unsigned long long)base_ + size_);
+      ptr2ull(base_), ptr2ull(base_) + size_);
 }
 
 void PMemoryManager::GetCreateParams(size_t* size, size_t* allocPageSize) {
