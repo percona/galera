@@ -196,6 +196,8 @@ class Aes_ctr_cipher : public Stream_cipher {
 
   Aes_ctr_cipher();
   ~Aes_ctr_cipher() override;
+  Aes_ctr_cipher(const Aes_ctr_cipher&) = delete;
+  Aes_ctr_cipher& operator=(const Aes_ctr_cipher&) = delete;
 
   bool open(const unsigned char *fileKey, const unsigned char *iv) override;
   void close() override;

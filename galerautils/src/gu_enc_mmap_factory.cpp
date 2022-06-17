@@ -1,6 +1,7 @@
-#include "gu_mmap_factory.hpp"
+#include "gu_enc_mmap_factory.hpp"
 #include "gu_fdesc.hpp"
-#include "gu_mmapenc.hpp"
+#include "gu_enc_mmap.hpp"
+#include "gu_enc_utils.hpp"
 
 namespace gu {
 std::shared_ptr<IMMap> MMapFactory::create(FileDescriptor& fd, bool encrypt, size_t cachePageSize,

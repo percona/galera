@@ -6,7 +6,7 @@
 
 #include "gcache_page.hpp"
 #include "gcache_limits.hpp"
-#include <gu_mmap_factory.hpp>
+#include "gu_enc_mmap_factory.hpp"
 
 #include <gu_throw.hpp>
 #include <gu_logger.hpp>

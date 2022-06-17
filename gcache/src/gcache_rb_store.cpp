@@ -13,8 +13,8 @@
 #include <gu_hexdump.hpp>
 #include <gu_hash.h>
 
-#include <gu_mmap_factory.hpp>
-#include <gu_encryption.hpp>
+#include <gu_enc_mmap_factory.hpp>
+#include <gu_enc_utils.hpp>
 #include <enc_stream_cipher.h>
 #include <gu_crc.hpp>
 

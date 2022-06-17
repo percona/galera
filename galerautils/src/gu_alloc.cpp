@@ -10,7 +10,7 @@
 #include "gu_assert.hpp"
 #include "gu_arch.h"
 #include "gu_limits.h"
-#include "gu_mmap_factory.hpp"
+#include "gu_enc_mmap_factory.hpp"
 #include "gu_config.hpp"
 
 #include <sstream>

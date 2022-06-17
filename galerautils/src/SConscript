@@ -79,9 +79,6 @@ libgalerautilsxx_sources = [
     'gu_config.cpp',
     'gu_fdesc.cpp',
     'gu_mmap.cpp',
-    'gu_mmapenc.cpp',
-    'gu_mmap_factory.cpp',
-    'gu_encryption.cpp',
     'gu_alloc.cpp',
     'gu_rset.cpp',
     'gu_resolver.cpp',
@@ -94,7 +91,13 @@ libgalerautilsxx_sources = [
     'gu_asio_stream_engine.cpp',
     'gu_debug_sync.cpp',
     'gu_thread.cpp',
-    'enc_stream_cipher.cpp'
+    'enc_stream_cipher.cpp',
+    'gu_enc_mmap.cpp',
+    'gu_enc_mmap_factory.cpp',
+    'gu_enc_utils.cpp',
+    'gu_enc_debug.cpp',
+    'gu_enc_pmemory_manager.cpp',
+    'gu_enc_pmemory_manager_pool.cpp'
 ]
 
 #libgalerautilsxx_objs  = libgalerautilsxx_env.Object(
