@@ -33,7 +33,8 @@ PMemoryManager::PMemoryManager(size_t size, size_t allocPageSize)
 , mapped_(false)
 , allocPagesCnt_(0)
 , allocPageSize_(allocPageSize) {
-    S_DEBUG_A0("+++PMemoryManager::PMemoryManager()\n");
+    S_DEBUG_A("+++PMemoryManager::PMemoryManager() size: %ld, allocPageSize: %ld\n",
+      size, allocPageSize);
 
     // allocPageSize has to be CPU page aligned
     if (allocPageSize_ % getCpuPageSize() || allocPageSize_ < getCpuPageSize()) {
@@ -45,7 +46,7 @@ PMemoryManager::PMemoryManager(size_t size, size_t allocPageSize)
     // how many pages do we need to satisfy size?
     allocPagesCnt_ = size / allocPageSize_;
     if (size % allocPageSize_) {
-        S_DEBUG_A("PMemoryManager::PMemoryManager() adding page, size not aligned to allocation unit: %ld\n", size);
+        S_DEBUG_A("PMemoryManager::PMemoryManager() adding page, size %ld is not aligned to allocation unit\n", size);
         allocPagesCnt_++;
     }
     allocPagesCnt_ = allocPagesCnt_ < CACHE_ALLOC_PAGES_MAX ? allocPagesCnt_ : CACHE_ALLOC_PAGES_MAX;

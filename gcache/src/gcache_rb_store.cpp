@@ -97,7 +97,7 @@ namespace gcache
 #else
         fd_        (name, check_size(size)),
 #endif /* PXC */
-        mmapptr_   (gu::MMapFactory::create(fd_, encrypt, encryptCachePageSize, encryptCacheSize, false, static_cast<size_t>(PREAMBLE_LEN))),
+        mmapptr_   (gu::MMapFactory::create(fd_, encrypt, encryptCachePageSize, check_size(encryptCacheSize), false, static_cast<size_t>(PREAMBLE_LEN))),
         mmap_      (*mmapptr_),
         preamble_  (static_cast<char*>(mmap_.get_ptr())),
         header_    (reinterpret_cast<int64_t*>(preamble_ + PREAMBLE_LEN)),

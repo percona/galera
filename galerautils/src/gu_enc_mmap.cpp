@@ -18,11 +18,13 @@
 
 namespace gu {
 
+#define IS_LAST_PAGE(page_) (page_ == pagesCnt_-1)
+
 #define REAL_ENCRYPTION 1
 
 // maximum number of PMemoryManagers waiting in the pool
 static const size_t MANAGERS_POOL_SIZE = 10;
-PMemoryManagerPool memoryManagerManager(MANAGERS_POOL_SIZE);
+PMemoryManagerPool memoryManagerPool(MANAGERS_POOL_SIZE);
 
 // EncMMap objects repository
 static std::atomic_flag encMmapsLock = ATOMIC_FLAG_INIT;
@@ -107,7 +109,7 @@ size_t EncMMap::page_number(unsigned char* addr) const {
 // encrption / decryption
 void EncMMap::encrypt(unsigned char* dst, unsigned char* src, size_t size, size_t pageNumber) const {
     // the last page may be not full
-    size = (pageNumber == pagesCnt_-1) ? lastPageSize_ : size;
+    size = IS_LAST_PAGE(pageNumber) ? lastPageSize_ : size;
 #if REAL_ENCRYPTION
     size_t pageStartOffset = pageNumber * pageSize_;
     size_t unencryptedSize = 0;
@@ -131,7 +133,7 @@ void EncMMap::encrypt(unsigned char* dst, unsigned char* src, size_t size, size_
 
 void EncMMap::decrypt(unsigned char* dst, unsigned char* src, size_t size, size_t pageNumber) const {
     // the last page may be not full
-    size = (pageNumber == pagesCnt_-1) ? lastPageSize_ : size;
+    size = IS_LAST_PAGE(pageNumber) ? lastPageSize_ : size;
 #if REAL_ENCRYPTION
     size_t pageStartOffset = pageNumber * pageSize_;
     size_t unencryptedSize = 0;
@@ -220,7 +222,7 @@ EncMMap::EncMMap(const std::string& key, std::shared_ptr<MMap> rawmmap,
 // mmap 2 pages more: 1st for aligning start, 2nd if the last underlying page is not aligned
 , mmap_ptr_(static_cast<unsigned char*>(mmap(nullptr, vMemSize_ + 2*pageSize_, PROT_NONE, MAP_ANONYMOUS|MAP_PRIVATE, -1, 0)))
 , base_(nullptr)
-, memoryManagerP_(memoryManagerManager.allocate(cachePageSize, cacheSize))
+, memoryManagerP_(memoryManagerPool.allocate(cachePageSize, cacheSize))
 , memoryManager_(*memoryManagerP_)
 , page2protectionGuard_()
 , page2protection_(nullptr)
@@ -280,7 +282,7 @@ EncMMap::~EncMMap() {
     decryptor_.close();
 
     memoryManager_.freeAll();
-    memoryManagerManager.free(memoryManagerP_);
+    memoryManagerPool.free(memoryManagerP_);
 }
 
 bool EncMMap::lock() {
@@ -316,8 +318,8 @@ void EncMMap::mprotectd(unsigned char *ptr, size_t size, int prot) const {
         page2protection_[firstPageNo] = prot;
     } else {
         size_t pagesCnt = size/pageSize_;
-        pagesCnt = (size%pagesCnt_) ? pagesCnt+1 : pagesCnt;
-        memset(&(page2protection_[firstPageNo]), PROT_NONE, sizeof(int) * pagesCnt);
+        pagesCnt = (size%pageSize_) ? pagesCnt+1 : pagesCnt;
+        memset(&(page2protection_[firstPageNo]), prot, sizeof(int) * pagesCnt);
     }
 }
 
@@ -325,18 +327,21 @@ void EncMMap::mprotectd(unsigned char *ptr, size_t size, int prot) const {
 void EncMMap::sync(void *addr, size_t length) const {
     unsigned char* addrU = reinterpret_cast<unsigned char*>(addr);
 
-    int firstPageToSync = page_number(addrU);
+    S_DEBUG1("sync() addr: %llX, length: %ld\n", ptr2ull(addr), length);
+
+    size_t firstPageToSync = page_number(addrU);
     unsigned char* vpageEnd = addrU + length;
-    int lastPageToSync = page_number(vpageEnd);
+    size_t lastPageToSync = page_number(vpageEnd);
 
     // calculate the real lenght to sync. It is pages bound
     unsigned char* syncAddrStart = page_start(firstPageToSync);
-    unsigned char* syncAddrEnd = page_start(lastPageToSync) + pageSize_;
+    size_t lastPageSize = IS_LAST_PAGE(lastPageToSync) ? lastPageSize_ : pageSize_;
+    unsigned char* syncAddrEnd = page_start(lastPageToSync) + lastPageSize;
     size_t realSyncLen = syncAddrEnd - syncAddrStart;
     size_t syncStartOffset = base_ - addrU;
 
     for (auto kv = vpage2ppage_.begin(); kv != vpage2ppage_.end(); ++kv) {
-        int pageNo = page_number(kv->first);
+        size_t pageNo = page_number(kv->first);
         if(pageNo < firstPageToSync || pageNo > lastPageToSync) {
             continue;
         }
@@ -366,7 +371,7 @@ void EncMMap::sync() const {
         int pageNo = page_number(kv->first);
         int protection = page2protection_[pageNo];
         unsigned char* vpageStart = kv->first;
-        S_DEBUG1("sync pageNo: %d, prot: %d (x%llX - x%llX)\n",
+        S_DEBUG1("sync() pageNo: %d, prot: %d (x%llX - x%llX)\n",
             pageNo, page2protection_[pageNo], ptr2ull(vpageStart), ptr2ull(vpageStart)+pageSize_);
         if(protection == (PROT_READ | PROT_WRITE)) {
             // flush
@@ -506,7 +511,7 @@ void EncMMap::handle_signal(siginfo_t* info) {
                     unsigned char* dstPtr = mmaprawPtr_ + pageNo*pageSize_;
                     mprotectd(vpageStart, pageSize_, PROT_READ);
 
-                    size_t pageSize = (pageNo == pagesCnt_-1) ? lastPageSize_ : pageSize_;
+                    size_t pageSize = IS_LAST_PAGE(pageNo) ? lastPageSize_ : pageSize_;
                     if (gluer.glue(pageNo, vpageStart, dstPtr, pageSize)) {
                         S_DEBUG0("glued\n");
                         // logically should be done in the loop below, but
