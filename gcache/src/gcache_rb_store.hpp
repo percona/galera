@@ -172,6 +172,8 @@ namespace gcache
         ProgressCallback*  pcb_;
         bool encrypt_;
         int masterKeyId_;
+        gu::UUID masterKeyUuid_;
+
         std::string fileKey_;
         gu::FileDescriptor fd_;
         std::shared_ptr<gu::IMMap>  mmapptr_;  // to keep mmap_ member
@@ -214,6 +216,7 @@ namespace gcache
         static std::string const PR_KEY_ENCRYPTION_VERSION;
         static std::string const PR_KEY_ENCRYPTED;
         static std::string const PR_KEY_MK_ID;
+        static std::string const PR_KEY_MK_UUID;
         static std::string const PR_KEY_FILE_KEY;
         static std::string const PR_KEY_ENC_CRC;
 
@@ -226,6 +229,8 @@ namespace gcache
         void          recover(off_t offset, int version);
 
         void          estimate_space(bool zero_out = false);
+
+        void          rotate_master_key();
 
         RingBuffer(const gcache::RingBuffer&);
         RingBuffer& operator=(const gcache::RingBuffer&);

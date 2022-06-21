@@ -15,7 +15,6 @@
 
 #include <gu_enc_mmap_factory.hpp>
 #include <gu_enc_utils.hpp>
-#include <enc_stream_cipher.h>
 #include <gu_crc.hpp>
 
 #include <cassert>
@@ -87,6 +86,7 @@ namespace gcache
         pcb_       (pcb),
         encrypt_   (encrypt),
         masterKeyId_(0),
+        masterKeyUuid_(),
         fileKey_(),
 #ifdef PXC
 #ifdef HAVE_PSI_INTERFACE
@@ -123,12 +123,16 @@ namespace gcache
     {
         assert((uintptr_t(start_) % MemOps::ALIGNMENT) == 0);
         constructor_common ();
+        // keyringManager_.SetKeyRotationRequestObserver([this]() {
+        //     rotate_master_key();
+        // });
         open_preamble(recover);
         BH_clear (BH_cast(next_));
     }
 
     RingBuffer::~RingBuffer ()
     {
+        // keyringManager_.SetKeyRotationRequestObserver([](){});
         close_preamble();
         open_ = false;
         mmap_.sync();
@@ -617,6 +621,34 @@ namespace gcache
             << "\nused   : " << size_used_;
     }
 
+    void
+    RingBuffer::rotate_master_key()
+    {
+        if (!encrypt_)
+          return;
+
+        // todo: mutex
+        std::string oldMKName = gu::CreateMasterKeyName(masterKeyUuid_, masterKeyId_);
+        //std::string oldMK = keyringManager_.GetKey(oldMKName);
+        std::string oldMK("01234567890123456789012345678901");
+
+        // generate new MK
+        masterKeyId_++;
+        std::string newMKName = gu::CreateMasterKeyName(masterKeyUuid_, masterKeyId_);
+        // keyringManager_.GenerateKey(newMKName);
+        // std::string newMK = keyringManager.GetKey(newMKName);
+        std::string newMK("01234567890123456789012345678901");
+
+        // decrypt fileKey_ with the old MK
+        std::string unencryptedFileKey = gu::DecryptKey(gu::decode64(fileKey_), oldMK);
+
+        // encrypt with new MK
+        fileKey_ = gu::encode64(gu::EncryptKey(unencryptedFileKey, newMK));
+
+        // store preamble
+        write_preamble(false);
+    }
+
     std::string const RingBuffer::PR_KEY_VERSION   = "Version:";
     std::string const RingBuffer::PR_KEY_GID       = "GID:";
     std::string const RingBuffer::PR_KEY_SEQNO_MAX = "seqno_max:";
@@ -626,6 +658,7 @@ namespace gcache
     std::string const RingBuffer::PR_KEY_ENCRYPTION_VERSION = "enc_version:";
     std::string const RingBuffer::PR_KEY_ENCRYPTED = "enc_encrypted:";
     std::string const RingBuffer::PR_KEY_MK_ID = "enc_mk_id:";
+    std::string const RingBuffer::PR_KEY_MK_UUID = "enc_mk_uuid:";
     std::string const RingBuffer::PR_KEY_FILE_KEY = "enc_fk_id:";
     std::string const RingBuffer::PR_KEY_ENC_CRC = "enc_crc:";
 
@@ -665,12 +698,14 @@ namespace gcache
         os << PR_KEY_ENCRYPTION_VERSION << ' ' << ENCRYPTION_VERSION << '\n';
         os << PR_KEY_ENCRYPTED << ' ' << encrypt_ << '\n';
         os << PR_KEY_MK_ID << ' ' << masterKeyId_ << '\n';
+        os << PR_KEY_MK_UUID << ' ' << masterKeyUuid_ << '\n';
         os << PR_KEY_FILE_KEY << ' ' << fileKey_ << '\n';
 
         gu::CRC32C crc;
         crc.append(&ENCRYPTION_VERSION, sizeof(ENCRYPTION_VERSION));
         crc.append(&encrypt_, sizeof(encrypt_));
         crc.append(&masterKeyId_, sizeof(masterKeyId_));
+        crc.append(masterKeyUuid_.ptr(), GU_UUID_LEN);
         crc.append(fileKey_.c_str(), fileKey_.length());
         uint32_t crc_val = crc.get();
         os << PR_KEY_ENC_CRC << ' ' << crc_val << '\n';
@@ -725,6 +760,7 @@ namespace gcache
                 else if (PR_KEY_ENCRYPTION_VERSION == key) istr >> enc_version;
                 else if (PR_KEY_ENCRYPTED == key) istr >> enc_encrypted;
                 else if (PR_KEY_MK_ID     == key) istr >> masterKeyId_;
+                else if (PR_KEY_MK_UUID    == key) istr >> masterKeyUuid_;
                 else if (PR_KEY_FILE_KEY  == key) istr >> fileKey_;
                 else if (PR_KEY_ENC_CRC   == key) istr >> enc_crc;
             }
@@ -759,6 +795,7 @@ namespace gcache
                 crc.append(&enc_version, sizeof(enc_version));
                 crc.append(&enc_encrypted, sizeof(enc_encrypted));
                 crc.append(&masterKeyId_, sizeof(masterKeyId_));
+                crc.append(masterKeyUuid_.ptr(), GU_UUID_LEN);
                 crc.append(fileKey_.c_str(), fileKey_.length());
                 crc_val = crc.get();
             }
@@ -775,43 +812,32 @@ namespace gcache
                 masterKeyId_ = 0;
             }
 
-            if (masterKeyId_ == 0) {
+            std::string mkName;
+            if (masterKeyId_ == 0 || masterKeyUuid_ == GU_UUID_NIL) {
                 // no MasterKey. Generate the new one
+                masterKeyUuid_ = gu::UUID(0,0);
                 masterKeyId_ = 1;
+
+                mkName = gu::CreateMasterKeyName(masterKeyUuid_, masterKeyId_);
+                //keyringManager_.GenerateKey(mkName);
+            } else {
+                mkName = gu::CreateMasterKeyName(masterKeyUuid_, masterKeyId_);
             }
 
             // 1. Get MK from encryption context
-            //std::string mk = encryptionCtx_.MasterKeyProvider().GetMasterKey(enc_mk_id);
+            //std::string mk = keyringManager_.GetKey(mkName);
             std::string mk("01234567890123456789012345678901");
 
             // 2. Decrypt fileKey_ (or generate the new one)
-            static unsigned char iv[gu::Aes_ctr_decryptor::AES_BLOCK_SIZE] = {0};
             std::string unencryptedFileKey;
-            const unsigned char* mkPtr = reinterpret_cast<const unsigned char*>(mk.c_str());
 
             if (fileKey_.empty()) {
                 // no file key. Generate the new one
                 unencryptedFileKey = gu::generateRandomKey();
-                const unsigned char* keyPtr = reinterpret_cast<const unsigned char*>(unencryptedFileKey.c_str());
-                // encrypt it
-                char encKeyArr[gu::Aes_ctr::FILE_KEY_LENGTH];
-                unsigned char* encKeyArrPtr = reinterpret_cast<unsigned char*>(encKeyArr);
-                gu::Aes_ctr_encryptor encryptor;
-                encryptor.open(mkPtr, iv);
-                encryptor.encrypt(encKeyArrPtr, keyPtr, unencryptedFileKey.length());
-                encryptor.close();
-                fileKey_ = gu::encode64(std::string(encKeyArr, gu::Aes_ctr::FILE_KEY_LENGTH));
+                fileKey_ = gu::encode64(gu::EncryptKey(unencryptedFileKey, mk));
                 do_recover = false;
             } else {
-                std::string encryptedFileKey = gu::decode64(fileKey_);
-                char decryptedFileKeyArr[gu::Aes_ctr_decryptor::FILE_KEY_LENGTH];
-                const unsigned char* encKeyPtr = reinterpret_cast<const unsigned char*>(encryptedFileKey.c_str());
-                unsigned char* decKeyPtr = reinterpret_cast<unsigned char*>(decryptedFileKeyArr);
-                gu::Aes_ctr_decryptor decryptor;
-                decryptor.open(mkPtr, iv);
-                decryptor.decrypt(decKeyPtr, encKeyPtr, encryptedFileKey.length());
-                decryptor.close();
-                unencryptedFileKey = std::string(decryptedFileKeyArr, gu::Aes_ctr_decryptor::FILE_KEY_LENGTH);
+                unencryptedFileKey = gu::DecryptKey(gu::decode64(fileKey_), mk);
             }
             // 3. pass file key to the mmap
             // Yes, I know this is ugly and IMMap should not have set_key() method,
@@ -1181,7 +1207,6 @@ namespace gcache
 
         if (!seqno2ptr_.empty())
         {
-            fprintf(stderr, "seqno2ptr_ not empty\n");
             assert(next_ <= first_ || size_trail_ == 0);
             assert(next_ >  first_ || size_trail_ >  0);
 
@@ -1190,9 +1215,7 @@ namespace gcache
             assert(*r);
             seqno_t const seqno_max(seqno2ptr_.index_back());
             seqno_t       seqno_min(seqno2ptr_.index_front());
-            fprintf(stderr, "min: %d, max: %d, lowest: %d\n",
-              seqno_min, seqno_max, lowest);
-            
+
             /* need to search for seqno gaps */
             assert(seqno_max >= lowest);
             if (lowest == seqno_max)

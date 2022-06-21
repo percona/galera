@@ -18,7 +18,7 @@
 
 namespace gu {
 
-#define IS_LAST_PAGE(page_) (page_ == pagesCnt_-1)
+#define IS_LAST_PAGE(_page) (_page == pagesCnt_-1)
 
 #define REAL_ENCRYPTION 1
 
