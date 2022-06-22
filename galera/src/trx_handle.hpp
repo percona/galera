@@ -1034,7 +1034,8 @@ private:
 
             assert(params_.version_ >= 0 &&
                    params_.version_ <= WriteSetNG::MAX_VERSION);
-
+// KH: when params_ are extednded with enc params, we need to pass them down
+// here to the Allocator
             new (wso) WriteSetOut (params_.working_dir_,
                                    trx_id(), params_.key_format_,
                                    store,
