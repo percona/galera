@@ -17,6 +17,10 @@
 
 #include <string>
 
+namespace gu {
+    class MasterKeyProvider;
+}
+
 namespace gcache
 {
     class RingBuffer : public MemOps
@@ -32,7 +36,8 @@ namespace gcache
                     bool               recover,
                     bool               encrypt,
                     size_t             encryptCachePageSize,
-                    size_t             encryptCacheSize);
+                    size_t             encryptCacheSize,
+                    gu::MasterKeyProvider& masterKeyProvider);
 
         ~RingBuffer ();
 
@@ -171,10 +176,9 @@ namespace gcache
 
         ProgressCallback*  pcb_;
         bool encrypt_;
-        int masterKeyId_;
-        gu::UUID masterKeyUuid_;
 
         std::string fileKey_;
+        gu::MasterKeyProvider &masterKeyProvider_;
         gu::FileDescriptor fd_;
         std::shared_ptr<gu::IMMap>  mmapptr_;  // to keep mmap_ member
         gu::IMMap&         mmap_;
@@ -230,7 +234,7 @@ namespace gcache
 
         void          estimate_space(bool zero_out = false);
 
-        void          rotate_master_key();
+        bool          rotate_master_key(const std::string& newKey);
 
         RingBuffer(const gcache::RingBuffer&);
         RingBuffer& operator=(const gcache::RingBuffer&);

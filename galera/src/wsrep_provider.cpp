@@ -156,6 +156,7 @@ char* galera_parameters_get (wsrep_t* gh)
 extern "C"
 wsrep_status_t galera_enc_set_key(wsrep_t* gh, const wsrep_enc_key_t*key)
 {
+    // KH: connect MK rotation here
     return WSREP_NOT_IMPLEMENTED;
 }
 

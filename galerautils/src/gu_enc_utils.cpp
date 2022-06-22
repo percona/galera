@@ -2,6 +2,7 @@
 #include "gu_logger.hpp"
 #include "gu_uuid.hpp"
 #include "gu_assert.hpp"
+#include "gu_config.hpp"
 #include "enc_stream_cipher.h"
 
 #include <boost/archive/iterators/binary_from_base64.hpp>
@@ -100,6 +101,24 @@ std::string CreateMasterKeyName(UUID& uuid, int keyId) {
 
     return MASTER_KEY_PREFIX + os.str() + MASTER_KEY_SEPARATOR +
       std::to_string(keyId);
+}
+
+
+MasterKeyProvider::MasterKeyProvider(std::function<std::string()> getCurrentKeyCb)
+: keyRotationObserver_([](const std::string&){return true;})
+, getCurrentKeyCb_(getCurrentKeyCb) {
+}
+
+void MasterKeyProvider::RegisterKeyRotationRequestObserver(std::function<bool(const std::string&)> fn) {
+    keyRotationObserver_ = fn;
+}
+
+bool MasterKeyProvider::NotifyKeyRotationObserver(const std::string& key) {
+    return keyRotationObserver_(key);
+}
+
+std::string MasterKeyProvider::GetCurrentKey() {
+    return getCurrentKeyCb_();
 }
 
 }  // namespace

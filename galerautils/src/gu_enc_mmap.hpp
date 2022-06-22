@@ -51,7 +51,6 @@ private:
     void encrypt(unsigned char* dst, unsigned char* src, size_t size, size_t pageNumber) const;
     void decrypt(unsigned char* dst, unsigned char* src, size_t size, size_t pageNumber) const;
     void dumpMappingsInt();
-    std::string key_;
     std::shared_ptr<MMap> mmapraw_;
     size_t pageSize_;
     unsigned char* mmaprawPtr_;

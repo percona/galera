@@ -22,6 +22,7 @@
 
 #include "gcs.hpp"
 #include "gcs_test.hpp"
+#include "gu_enc_utils.hpp"
 
 #define USE_WAIT
 
@@ -697,6 +698,8 @@ test_print_stat (long msgs, size_t size, double interval)
             size >> 10, (double)(size >> 10)/interval);
 }
 
+// KH: todo:
+gu::MasterKeyProvider mk_provider;
 int main (int argc, char *argv[])
 {
     long err = 0;
@@ -731,7 +734,7 @@ int main (int argc, char *argv[])
 
     gcs_register_params(gconf);
 
-    if (!(cache = gcache_create (gconf, ""))) goto out;
+    if (!(cache = gcache_create (gconf, "", mk_provider))) goto out;
     if (!(gcs = gcs_create (gconf, cache, NULL, NULL, NULL, 0, 0))) goto out;
     puts ("debug"); fflush(stdout);
     /* the following hack won't work if there is 0.0.0.0 in URL options */

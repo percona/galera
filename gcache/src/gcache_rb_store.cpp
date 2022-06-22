@@ -81,13 +81,13 @@ namespace gcache
                             bool const         recover,
                             bool               encrypt,
                             size_t             encryptCachePageSize,
-                            size_t             encryptCacheSize)
+                            size_t             encryptCacheSize,
+                            gu::MasterKeyProvider& masterKeyProvider)
     :
         pcb_       (pcb),
         encrypt_   (encrypt),
-        masterKeyId_(0),
-        masterKeyUuid_(),
         fileKey_(),
+        masterKeyProvider_(masterKeyProvider),
 #ifdef PXC
 #ifdef HAVE_PSI_INTERFACE
         fd_        (name, WSREP_PFS_INSTR_TAG_RINGBUFFER_FILE, check_size(size)),
@@ -123,9 +123,10 @@ namespace gcache
     {
         assert((uintptr_t(start_) % MemOps::ALIGNMENT) == 0);
         constructor_common ();
-        // keyringManager_.SetKeyRotationRequestObserver([this]() {
-        //     rotate_master_key();
-        // });
+        masterKeyProvider_.RegisterKeyRotationRequestObserver(
+            [this](const std::string& key) {
+               return rotate_master_key(key); 
+            });
         open_preamble(recover);
         BH_clear (BH_cast(next_));
     }
@@ -621,23 +622,13 @@ namespace gcache
             << "\nused   : " << size_used_;
     }
 
-    void
-    RingBuffer::rotate_master_key()
+    bool
+    RingBuffer::rotate_master_key(const std::string& newMK)
     {
         if (!encrypt_)
-          return;
+          return true;
 
-        // todo: mutex
-        std::string oldMKName = gu::CreateMasterKeyName(masterKeyUuid_, masterKeyId_);
-        //std::string oldMK = keyringManager_.GetKey(oldMKName);
-        std::string oldMK("01234567890123456789012345678901");
-
-        // generate new MK
-        masterKeyId_++;
-        std::string newMKName = gu::CreateMasterKeyName(masterKeyUuid_, masterKeyId_);
-        // keyringManager_.GenerateKey(newMKName);
-        // std::string newMK = keyringManager.GetKey(newMKName);
-        std::string newMK("01234567890123456789012345678901");
+        std::string oldMK = masterKeyProvider_.GetCurrentKey();
 
         // decrypt fileKey_ with the old MK
         std::string unencryptedFileKey = gu::DecryptKey(gu::decode64(fileKey_), oldMK);
@@ -647,6 +638,8 @@ namespace gcache
 
         // store preamble
         write_preamble(false);
+
+        return true;
     }
 
     std::string const RingBuffer::PR_KEY_VERSION   = "Version:";
@@ -697,15 +690,11 @@ namespace gcache
         static const int ENCRYPTION_VERSION = 1;
         os << PR_KEY_ENCRYPTION_VERSION << ' ' << ENCRYPTION_VERSION << '\n';
         os << PR_KEY_ENCRYPTED << ' ' << encrypt_ << '\n';
-        os << PR_KEY_MK_ID << ' ' << masterKeyId_ << '\n';
-        os << PR_KEY_MK_UUID << ' ' << masterKeyUuid_ << '\n';
         os << PR_KEY_FILE_KEY << ' ' << fileKey_ << '\n';
 
         gu::CRC32C crc;
         crc.append(&ENCRYPTION_VERSION, sizeof(ENCRYPTION_VERSION));
         crc.append(&encrypt_, sizeof(encrypt_));
-        crc.append(&masterKeyId_, sizeof(masterKeyId_));
-        crc.append(masterKeyUuid_.ptr(), GU_UUID_LEN);
         crc.append(fileKey_.c_str(), fileKey_.length());
         uint32_t crc_val = crc.get();
         os << PR_KEY_ENC_CRC << ' ' << crc_val << '\n';
@@ -759,8 +748,6 @@ namespace gcache
                 else if (PR_KEY_SYNCED    == key) istr >> synced;
                 else if (PR_KEY_ENCRYPTION_VERSION == key) istr >> enc_version;
                 else if (PR_KEY_ENCRYPTED == key) istr >> enc_encrypted;
-                else if (PR_KEY_MK_ID     == key) istr >> masterKeyId_;
-                else if (PR_KEY_MK_UUID    == key) istr >> masterKeyUuid_;
                 else if (PR_KEY_FILE_KEY  == key) istr >> fileKey_;
                 else if (PR_KEY_ENC_CRC   == key) istr >> enc_crc;
             }
@@ -794,8 +781,6 @@ namespace gcache
                 gu::CRC32C crc;
                 crc.append(&enc_version, sizeof(enc_version));
                 crc.append(&enc_encrypted, sizeof(enc_encrypted));
-                crc.append(&masterKeyId_, sizeof(masterKeyId_));
-                crc.append(masterKeyUuid_.ptr(), GU_UUID_LEN);
                 crc.append(fileKey_.c_str(), fileKey_.length());
                 crc_val = crc.get();
             }
@@ -808,25 +793,10 @@ namespace gcache
                 // No crc info (no header?) or crc mismatch.
                 // This will trigger new file key generation and GCache reset
                 fileKey_.clear();
-                // master key can be spoiled as well
-                masterKeyId_ = 0;
-            }
-
-            std::string mkName;
-            if (masterKeyId_ == 0 || masterKeyUuid_ == GU_UUID_NIL) {
-                // no MasterKey. Generate the new one
-                masterKeyUuid_ = gu::UUID(0,0);
-                masterKeyId_ = 1;
-
-                mkName = gu::CreateMasterKeyName(masterKeyUuid_, masterKeyId_);
-                //keyringManager_.GenerateKey(mkName);
-            } else {
-                mkName = gu::CreateMasterKeyName(masterKeyUuid_, masterKeyId_);
             }
 
             // 1. Get MK from encryption context
-            //std::string mk = keyringManager_.GetKey(mkName);
-            std::string mk("01234567890123456789012345678901");
+            std::string mk = masterKeyProvider_.GetCurrentKey();
 
             // 2. Decrypt fileKey_ (or generate the new one)
             std::string unencryptedFileKey;

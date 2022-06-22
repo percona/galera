@@ -23,6 +23,10 @@
 #endif
 #include <stdint.h>
 
+namespace gu {
+    class MasterKeyProvider;
+}
+
 namespace gcache
 {
     class GCache
@@ -42,7 +46,8 @@ namespace gcache
          */
         GCache (ProgressCallback*  pcb,
                 gu::Config&        cfg,
-                const std::string& data_dir);
+                const std::string& data_dir,
+                gu::MasterKeyProvider& mk_provider);
 
         virtual ~GCache();
 

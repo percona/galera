@@ -214,8 +214,7 @@ static void install_signal_handler() {
 EncMMap::EncMMap(const std::string& key, std::shared_ptr<MMap> rawmmap,
                  size_t cachePageSize, size_t cacheSize, bool syncOnDestroy,
                  size_t encryptionStartOffset)
-: key_(key)
-, mmapraw_(rawmmap)
+: mmapraw_(rawmmap)
 , pageSize_(cachePageSize)
 , mmaprawPtr_(static_cast<unsigned char*>(mmapraw_->get_ptr()))
 , vMemSize_(mmapraw_->get_size())
@@ -265,7 +264,7 @@ EncMMap::EncMMap(const std::string& key, std::shared_ptr<MMap> rawmmap,
     addEncMMap(this, base_, vMemSize_);
 
     // we set up page2protection_ map inside
-    set_key(key_);
+    set_key(key);
 }
 
 EncMMap::~EncMMap() {
@@ -408,9 +407,8 @@ void EncMMap::unmap() {
 void EncMMap::set_key(const std::string& key) {
     static unsigned char iv[Aes_ctr_encryptor::AES_BLOCK_SIZE] = {0};
 
-    key_ = key;
-    assert(key_.length() >= Aes_ctr_encryptor::FILE_KEY_LENGTH);
-    unsigned char *kkey = (unsigned char*)key_.c_str();
+    assert(key.length() >= Aes_ctr_encryptor::FILE_KEY_LENGTH);
+    unsigned char *kkey = (unsigned char*)key.c_str();
     encryptor_.close();
     decryptor_.close();
     encryptor_.open(kkey, iv);

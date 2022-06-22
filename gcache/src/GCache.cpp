@@ -39,7 +39,8 @@ namespace gcache
     }
 
     GCache::GCache (ProgressCallback* pcb,
-                    gu::Config& cfg, const std::string& data_dir)
+                    gu::Config& cfg, const std::string& data_dir,
+                    gu::MasterKeyProvider& mk_provider)
         :
         config    (cfg),
         params    (config, data_dir),
@@ -58,7 +59,8 @@ namespace gcache
         rb        (pcb, params.rb_name(), params.rb_size(), seqno2ptr, gid,
                    params.debug(), params.recover(), params.encrypt(),
                    params.encryption_cache_page_size(),
-                   std::min(params.encryption_cache_size(), params.rb_size())),
+                   std::min(params.encryption_cache_size(), params.rb_size()),
+                   mk_provider),
         ps        (params.dir_name(),
                    params.keep_pages_size(),
                    params.page_size(),
@@ -111,11 +113,12 @@ namespace gcache
 
 #include "gcache.h"
 
-gcache_t* gcache_create (gu_config_t* conf, const char* data_dir)
+gcache_t* gcache_create (gu_config_t* conf, const char* data_dir, gu::MasterKeyProvider& mk_provider)
 {
+
     /* this funciton is used only in tests */
     gcache::GCache* gc = new gcache::GCache (
-        NULL, *reinterpret_cast<gu::Config*>(conf), data_dir);
+        NULL, *reinterpret_cast<gu::Config*>(conf), data_dir, mk_provider);
     return reinterpret_cast<gcache_t*>(gc);
 }
 

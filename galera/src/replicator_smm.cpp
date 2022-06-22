@@ -127,6 +127,7 @@ galera::ReplicatorSMM::ReplicatorSMM(const struct wsrep_init_args* args)
 #ifdef PXC
     abort_cb_           (args->abort_cb),
 #endif /* PXC */
+    enc_get_key_cb_     (args->enc_get_key_cb),
     sst_donor_          (),
     sst_uuid_           (WSREP_UUID_UNDEFINED),
     sst_seqno_          (WSREP_SEQNO_UNDEFINED),
@@ -141,7 +142,9 @@ galera::ReplicatorSMM::ReplicatorSMM(const struct wsrep_init_args* args)
     sst_received_       (false),
     gcache_progress_cb_ (ProgressCallback<int64_t>(WSREP_MEMBER_UNDEFINED,
                                                    WSREP_MEMBER_UNDEFINED)),
-    gcache_             (&gcache_progress_cb_, config_, config_.get(BASE_DIR)),
+    master_key_provider_([this](){ return get_encryption_key(); }),
+    gcache_             (&gcache_progress_cb_, config_, config_.get(BASE_DIR),
+                         master_key_provider_),
     joined_progress_cb_ (ProgressCallback<gcs_seqno_t>(WSREP_MEMBER_JOINED,
                                                        WSREP_MEMBER_SYNCED)),
     gcs_                (config_, gcache_, &joined_progress_cb_,
@@ -3805,4 +3808,18 @@ galera::ReplicatorSMM::abort()
     log_info << "ReplicatorSMM::abort()";
     gcs_.close();
     gu_abort();
+}
+
+std::string
+galera::ReplicatorSMM::get_encryption_key()
+{
+    static size_t KEY_LENGTH = 32;
+    unsigned char buf[KEY_LENGTH];
+    wsrep_enc_key_t key;
+    key.ptr = buf;
+    key.len = KEY_LENGTH;
+    if(!enc_get_key_cb_ || enc_get_key_cb_(&key)) {
+        return std::string();
+    }
+    return std::string(static_cast<const char*>(key.ptr), KEY_LENGTH);
 }
