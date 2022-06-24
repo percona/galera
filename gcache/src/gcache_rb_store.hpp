@@ -177,6 +177,8 @@ namespace gcache
         ProgressCallback*  pcb_;
         bool encrypt_;
 
+        int masterKeyId_;
+        gu::UUID masterKeyUuid_;
         std::string fileKey_;
         gu::MasterKeyProvider &masterKeyProvider_;
         gu::FileDescriptor fd_;
@@ -225,7 +227,9 @@ namespace gcache
         static std::string const PR_KEY_ENC_CRC;
 
         void          write_preamble(bool synced);
+public:
         void          open_preamble(bool recover);
+private:
         void          close_preamble();
 
         // returns lower bound (not inclusive) of valid seqno range
@@ -234,7 +238,7 @@ namespace gcache
 
         void          estimate_space(bool zero_out = false);
 
-        bool          rotate_master_key(const std::string& newKey);
+        bool          rotate_master_key();
 
         RingBuffer(const gcache::RingBuffer&);
         RingBuffer& operator=(const gcache::RingBuffer&);

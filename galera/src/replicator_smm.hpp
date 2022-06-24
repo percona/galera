@@ -155,6 +155,7 @@ namespace galera
         void process_sync(wsrep_seqno_t seqno_l);
         void process_vote(wsrep_seqno_t seq, int64_t code,wsrep_seqno_t seqno_l);
 
+        wsrep_status_t rotate_gcache_key();
 #ifdef PXC
         const struct wsrep_stats_var* stats_get();
 #else
@@ -1087,7 +1088,9 @@ namespace galera
         wsrep_abort_cb_t       abort_cb_;
 #endif /* PXC */
        wsrep_enc_get_key_cb_t  enc_get_key_cb_;
-       std::string get_encryption_key();
+       wsrep_enc_new_key_cb_t  enc_new_key_cb_;
+       std::string get_encryption_key(const std::string& keyId);
+       bool new_encryption_key(const std::string& keyId);
 
         // SST
         std::string   sst_donor_;

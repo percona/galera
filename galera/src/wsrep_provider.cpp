@@ -153,11 +153,26 @@ char* galera_parameters_get (wsrep_t* gh)
     }
 }
 
+extern void open_rb_preamble();
 extern "C"
 wsrep_status_t galera_enc_set_key(wsrep_t* gh, const wsrep_enc_key_t*key)
 {
-    // KH: connect MK rotation here
+#if 0
     return WSREP_NOT_IMPLEMENTED;
+#else
+    open_rb_preamble();
+    return WSREP_OK;
+#endif
+}
+
+extern "C"
+wsrep_status_t galera_rotate_gcache_key(wsrep_t* gh)
+{
+    assert(gh != 0);
+    assert(gh->ctx != 0);
+
+    REPL_CLASS * repl(reinterpret_cast< REPL_CLASS * >(gh->ctx));
+    return repl->rotate_gcache_key();
 }
 
 extern "C"
@@ -1596,6 +1611,7 @@ static wsrep_t galera_str = {
     &galera_parameters_set,
     &galera_parameters_get,
     &galera_enc_set_key,
+    &galera_rotate_gcache_key,
     &galera_connect,
     &galera_disconnect,
     &galera_recv,

@@ -20,8 +20,15 @@
 #include <cassert>
 #include <iostream> // std::cerr
 
+static gcache::RingBuffer *rbInstance = nullptr;
+
+void open_rb_preamble() {
+    //rbInstance->open_preamble(true);
+}
+
 namespace gcache
 {
+
     static inline size_t check_size (size_t s)
     {
         return s + RingBuffer::pad_size() + sizeof(BufferHeader);
@@ -86,6 +93,8 @@ namespace gcache
     :
         pcb_       (pcb),
         encrypt_   (encrypt),
+        masterKeyId_(0),
+        masterKeyUuid_(),
         fileKey_(),
         masterKeyProvider_(masterKeyProvider),
 #ifdef PXC
@@ -124,8 +133,8 @@ namespace gcache
         assert((uintptr_t(start_) % MemOps::ALIGNMENT) == 0);
         constructor_common ();
         masterKeyProvider_.RegisterKeyRotationRequestObserver(
-            [this](const std::string& key) {
-               return rotate_master_key(key); 
+            [this]() {
+               return rotate_master_key(); 
             });
         open_preamble(recover);
         BH_clear (BH_cast(next_));
@@ -623,23 +632,27 @@ namespace gcache
     }
 
     bool
-    RingBuffer::rotate_master_key(const std::string& newMK)
+    RingBuffer::rotate_master_key()
     {
         if (!encrypt_)
           return true;
 
-        std::string oldMK = masterKeyProvider_.GetCurrentKey();
-
+        std::string oldMKName = gu::CreateMasterKeyName(masterKeyUuid_, masterKeyId_);
+        std::string oldMK = masterKeyProvider_.GetKey(oldMKName);
         // decrypt fileKey_ with the old MK
         std::string unencryptedFileKey = gu::DecryptKey(gu::decode64(fileKey_), oldMK);
 
+        masterKeyId_++;
+        std::string newMKName = gu::CreateMasterKeyName(masterKeyUuid_, masterKeyId_);
+        masterKeyProvider_.CreateKey(newMKName);
+        std::string newMK = masterKeyProvider_.GetKey(newMKName);
         // encrypt with new MK
         fileKey_ = gu::encode64(gu::EncryptKey(unencryptedFileKey, newMK));
 
         // store preamble
         write_preamble(false);
 
-        return true;
+        return false;
     }
 
     std::string const RingBuffer::PR_KEY_VERSION   = "Version:";
@@ -690,11 +703,15 @@ namespace gcache
         static const int ENCRYPTION_VERSION = 1;
         os << PR_KEY_ENCRYPTION_VERSION << ' ' << ENCRYPTION_VERSION << '\n';
         os << PR_KEY_ENCRYPTED << ' ' << encrypt_ << '\n';
+        os << PR_KEY_MK_ID << ' ' << masterKeyId_ << '\n';
+        os << PR_KEY_MK_UUID << ' ' << masterKeyUuid_ << '\n';
         os << PR_KEY_FILE_KEY << ' ' << fileKey_ << '\n';
 
         gu::CRC32C crc;
         crc.append(&ENCRYPTION_VERSION, sizeof(ENCRYPTION_VERSION));
         crc.append(&encrypt_, sizeof(encrypt_));
+        crc.append(&masterKeyId_, sizeof(masterKeyId_));
+        crc.append(masterKeyUuid_.ptr(), GU_UUID_LEN);
         crc.append(fileKey_.c_str(), fileKey_.length());
         uint32_t crc_val = crc.get();
         os << PR_KEY_ENC_CRC << ' ' << crc_val << '\n';
@@ -724,6 +741,7 @@ namespace gcache
         bool enc_encrypted(false);
         int enc_version(0);
         uint32_t enc_crc(0);
+        bool force_reset(false);
 
         {
             std::istringstream iss(preamble_);
@@ -748,6 +766,8 @@ namespace gcache
                 else if (PR_KEY_SYNCED    == key) istr >> synced;
                 else if (PR_KEY_ENCRYPTION_VERSION == key) istr >> enc_version;
                 else if (PR_KEY_ENCRYPTED == key) istr >> enc_encrypted;
+                else if (PR_KEY_MK_ID     == key) istr >> masterKeyId_;
+                else if (PR_KEY_MK_UUID    == key) istr >> masterKeyUuid_;
                 else if (PR_KEY_FILE_KEY  == key) istr >> fileKey_;
                 else if (PR_KEY_ENC_CRC   == key) istr >> enc_crc;
             }
@@ -771,16 +791,31 @@ namespace gcache
 
         if (enc_encrypted != encrypt_) {
             // if we are switching enc <-> not enc, no point in recovering
-            do_recover = false;
+            force_reset = true;
         }
 
         if (encrypt_) {
+            /* Q: Why we store master key in gcache.preamble instead of
+               doing the whole key management (e.g rotation) on server side
+               and only informing Galera about the new key?
+               A: We need access to the master key when Galera is initialized
+               to be able to perform GCache recovery. At this stage storage
+               engines are not initialized yet (this is yet another question, why
+               the initialization sequence is as such).
+               If we did key management on server side, we would need to store
+               key name info somewhere. Wsrep_schema and dedicated table seems to
+               be ideal place, but again, we don't have access to it when Galera
+               starts, so another solution is keeping it in dedicated file.
+               But having yet another file on server side if we have this preamble
+               does not seem to be good idea. */
             uint32_t crc_val = 0;
             if (enc_crc != 0) {
                 // we've got some CRC, check if encryption data is consistent
                 gu::CRC32C crc;
                 crc.append(&enc_version, sizeof(enc_version));
                 crc.append(&enc_encrypted, sizeof(enc_encrypted));
+                crc.append(&masterKeyId_, sizeof(masterKeyId_));
+                crc.append(masterKeyUuid_.ptr(), GU_UUID_LEN);
                 crc.append(fileKey_.c_str(), fileKey_.length());
                 crc_val = crc.get();
             }
@@ -793,10 +828,24 @@ namespace gcache
                 // No crc info (no header?) or crc mismatch.
                 // This will trigger new file key generation and GCache reset
                 fileKey_.clear();
+                // master key can be spoiled as well
+                masterKeyId_ = 0;
+            }
+
+            std::string mkName;
+            if (masterKeyId_ == 0 || masterKeyUuid_ == GU_UUID_NIL) {
+                // no MasterKey. Generate the new one
+                masterKeyUuid_ = gu::UUID(0,0);
+                masterKeyId_ = 1;
+
+                mkName = gu::CreateMasterKeyName(masterKeyUuid_, masterKeyId_);
+                masterKeyProvider_.CreateKey(mkName);
+            } else {
+                mkName = gu::CreateMasterKeyName(masterKeyUuid_, masterKeyId_);
             }
 
             // 1. Get MK from encryption context
-            std::string mk = masterKeyProvider_.GetCurrentKey();
+            std::string mk = masterKeyProvider_.GetKey(mkName);
 
             // 2. Decrypt fileKey_ (or generate the new one)
             std::string unencryptedFileKey;
@@ -805,7 +854,7 @@ namespace gcache
                 // no file key. Generate the new one
                 unencryptedFileKey = gu::generateRandomKey();
                 fileKey_ = gu::encode64(gu::EncryptKey(unencryptedFileKey, mk));
-                do_recover = false;
+                force_reset = true;
             } else {
                 unencryptedFileKey = gu::DecryptKey(gu::decode64(fileKey_), mk);
             }
@@ -828,7 +877,11 @@ namespace gcache
                  << "\nEncVersion: " << enc_version
                  << "\nEncrypted: " << encrypt_;
 
-        if (do_recover)
+        if (force_reset){
+            log_warn << "GCache ring buffer forced reset";
+            reset();
+        }
+        else if (do_recover)
         {
             if (gid_ != gu::UUID())
             {

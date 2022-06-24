@@ -128,6 +128,7 @@ galera::ReplicatorSMM::ReplicatorSMM(const struct wsrep_init_args* args)
     abort_cb_           (args->abort_cb),
 #endif /* PXC */
     enc_get_key_cb_     (args->enc_get_key_cb),
+    enc_new_key_cb_     (args->enc_new_key_cb),
     sst_donor_          (),
     sst_uuid_           (WSREP_UUID_UNDEFINED),
     sst_seqno_          (WSREP_SEQNO_UNDEFINED),
@@ -142,7 +143,8 @@ galera::ReplicatorSMM::ReplicatorSMM(const struct wsrep_init_args* args)
     sst_received_       (false),
     gcache_progress_cb_ (ProgressCallback<int64_t>(WSREP_MEMBER_UNDEFINED,
                                                    WSREP_MEMBER_UNDEFINED)),
-    master_key_provider_([this](){ return get_encryption_key(); }),
+    master_key_provider_([this](const std::string& keyId){ return get_encryption_key(keyId); },
+                         [this](const std::string& keyId){ return new_encryption_key(keyId); }),
     gcache_             (&gcache_progress_cb_, config_, config_.get(BASE_DIR),
                          master_key_provider_),
     joined_progress_cb_ (ProgressCallback<gcs_seqno_t>(WSREP_MEMBER_JOINED,
@@ -2407,6 +2409,10 @@ out:
     local_monitor_.leave(lo);
 }
 
+wsrep_status_t galera::ReplicatorSMM::rotate_gcache_key() {
+    bool res = master_key_provider_.NotifyKeyRotationObserver();
+    return res ? WSREP_FATAL : WSREP_OK;
+}
 
 void galera::ReplicatorSMM::set_initial_position(const wsrep_uuid_t&  uuid,
                                                  wsrep_seqno_t const seqno)
@@ -3811,15 +3817,36 @@ galera::ReplicatorSMM::abort()
 }
 
 std::string
-galera::ReplicatorSMM::get_encryption_key()
+galera::ReplicatorSMM::get_encryption_key(const std::string& keyId)
 {
     static size_t KEY_LENGTH = 32;
     unsigned char buf[KEY_LENGTH];
     wsrep_enc_key_t key;
     key.ptr = buf;
     key.len = KEY_LENGTH;
-    if(!enc_get_key_cb_ || enc_get_key_cb_(&key)) {
+    wsrep_buf_t id;
+    id.ptr = keyId.c_str();
+    id.len = keyId.length();
+
+    if(!enc_get_key_cb_ ||
+       WSREP_CB_SUCCESS != enc_get_key_cb_(&id, &key)) {
         return std::string();
     }
+
     return std::string(static_cast<const char*>(key.ptr), KEY_LENGTH);
+}
+
+bool
+galera::ReplicatorSMM::new_encryption_key(const std::string& keyId)
+{
+    wsrep_buf_t id;
+    id.ptr = keyId.c_str();
+    id.len = keyId.length();
+
+    if(!enc_new_key_cb_ ||
+       WSREP_CB_SUCCESS != enc_new_key_cb_(&id)) {
+        return true;
+    }
+
+    return false;
 }

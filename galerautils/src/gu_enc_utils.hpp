@@ -19,14 +19,17 @@ std::string CreateMasterKeyName(UUID& uuid, int keyId);
 
 class MasterKeyProvider {
 public:
-    MasterKeyProvider(std::function<std::string()> getCurrentKeyCb);
-    void RegisterKeyRotationRequestObserver(std::function<bool(const std::string&)> fn);
-    bool NotifyKeyRotationObserver(const std::string& key);
-    std::string GetCurrentKey();
+    MasterKeyProvider(std::function<std::string(const std::string&)> getKeyCb,
+      std::function<bool(const std::string&)> createKeyCb);
+    void RegisterKeyRotationRequestObserver(std::function<bool()> fn);
+    bool NotifyKeyRotationObserver();
+    std::string GetKey(const std::string& keyId);
+    bool CreateKey(const std::string& keyId);
 
 private:
-    std::function<bool(const std::string&)> keyRotationObserver_;
-    std::function<std::string()> getCurrentKeyCb_;
+    std::function<bool()> keyRotationObserver_;
+    std::function<std::string(const std::string&)> getKeyCb_;
+    std::function<bool(const std::string&)> createKeyCb_;
 };
 
 }

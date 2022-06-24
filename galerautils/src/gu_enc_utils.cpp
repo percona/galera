@@ -104,21 +104,28 @@ std::string CreateMasterKeyName(UUID& uuid, int keyId) {
 }
 
 
-MasterKeyProvider::MasterKeyProvider(std::function<std::string()> getCurrentKeyCb)
-: keyRotationObserver_([](const std::string&){return true;})
-, getCurrentKeyCb_(getCurrentKeyCb) {
+MasterKeyProvider::MasterKeyProvider(std::function<std::string(const std::string&)> getKeyCb,
+  std::function<bool(const std::string&)> createKeyCb)
+: keyRotationObserver_([](){return true;})
+, getKeyCb_(getKeyCb)
+, createKeyCb_(createKeyCb) {
 }
 
-void MasterKeyProvider::RegisterKeyRotationRequestObserver(std::function<bool(const std::string&)> fn) {
+void MasterKeyProvider::RegisterKeyRotationRequestObserver(std::function<bool()> fn) {
     keyRotationObserver_ = fn;
 }
 
-bool MasterKeyProvider::NotifyKeyRotationObserver(const std::string& key) {
-    return keyRotationObserver_(key);
+bool MasterKeyProvider::NotifyKeyRotationObserver() {
+    return keyRotationObserver_();
 }
 
-std::string MasterKeyProvider::GetCurrentKey() {
-    return getCurrentKeyCb_();
+std::string MasterKeyProvider::GetKey(const std::string& keyId) {
+    return getKeyCb_(keyId);
 }
+
+bool MasterKeyProvider::CreateKey(const std::string& keyId) {
+    return createKeyCb_(keyId);
+}
+
 
 }  // namespace

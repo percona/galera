@@ -213,7 +213,7 @@ size_t gu::AsioStreamReact::read(const AsioMutableBuffer& buf) try
     size_t total_transferred(0);
     do
     {
-#if 1
+#if 1 // KH: todo: size may be quite big
         void *p = malloc(buf.size());
         auto read_result(
             engine_->read(
