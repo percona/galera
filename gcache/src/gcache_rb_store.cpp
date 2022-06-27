@@ -878,7 +878,7 @@ namespace gcache
                  << "\nEncrypted: " << encrypt_;
 
         if (force_reset){
-            log_warn << "GCache ring buffer forced reset";
+            log_info << "GCache ring buffer forced reset";
             reset();
         }
         else if (do_recover)
