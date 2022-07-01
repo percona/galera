@@ -18,7 +18,7 @@ namespace gu {
 class PPage;
 class PMemoryManager;
 
-void dumpMappings();
+void dump_mappings();
 
 
 class EncMMap : public IMMap
@@ -40,17 +40,18 @@ public:
     void sync() const override;
     void unmap() override;
     void set_key(const std::string& key) override;
+    void set_access_mode(AccessMode mode) override;
 
     void handle_signal(siginfo_t*);
 
     bool lock();
     void unlock();
 
-    static void dumpMappings();
+    static void dump_mappings();
 private:
     void encrypt(unsigned char* dst, unsigned char* src, size_t size, size_t pageNumber) const;
     void decrypt(unsigned char* dst, unsigned char* src, size_t size, size_t pageNumber) const;
-    void dumpMappingsInt();
+    void dump_mappings_int();
     std::shared_ptr<MMap> mmapraw_;
     size_t pageSize_;
     unsigned char* mmaprawPtr_;
@@ -59,14 +60,17 @@ private:
     unsigned char* base_;
     std::shared_ptr<PMemoryManager> memoryManagerP_;
     PMemoryManager &memoryManager_;
-    std::shared_ptr<int> page2protectionGuard_;
-    int* page2protection_;
+    std::shared_ptr<int> vpage2protectionGuard_;
+    // virtual page to its actual mprotect map
+    int* vpage2protection_;
+    // virtual page to physical page map
     std::map<unsigned char*, std::shared_ptr<PPage>> vpage2ppage_;
     size_t pagesCnt_;
     bool mapped_;
     size_t lastPageSize_;
     size_t encryptionStartOffset_;
     int defaultPageProtection_;
+    size_t readAheadCnt_;
     std::atomic_flag lock_;
     mutable Aes_ctr_encryptor encryptor_;
     mutable Aes_ctr_decryptor decryptor_;

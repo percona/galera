@@ -1562,11 +1562,11 @@ static void *gcs_recv_thread (void *arg)
         gcs_seqno_t this_act_id = GCS_SEQNO_ILL;
         struct gcs_repl_act** repl_act_ptr;
         struct gcs_act_rcvd   rcvd;
-// KH: recvd has action in GCache allocked buffer
+
         ret = gcs_core_recv (conn->core, &rcvd, conn->timeout);
 
         if (gu_unlikely(ret <= 0)) {
-            //fprintf(stderr, "KH: gcs_core_recv ret: %ld\n", ret);
+
             gu_debug ("gcs_core_recv returned %d: %s", ret, strerror(-ret));
 
             if (-ETIMEDOUT == ret && _handle_timeout(conn)) continue;
@@ -1604,7 +1604,6 @@ static void *gcs_recv_thread (void *arg)
         if (gu_unlikely(rcvd.act.type >= GCS_ACT_STATE_REQ ||
                         (conn->vote_wait_ && GCS_ACT_COMMIT_CUT==rcvd.act.type)))
         {
-            //fprintf(stderr, "KH: calling gcs_handle_actions. act.type: %d\n", rcvd.act.type);
             ret = gcs_handle_actions (conn, rcvd);
 
             if (gu_unlikely(ret < 0)) {         // error
@@ -1662,11 +1661,6 @@ static void *gcs_recv_thread (void *arg)
                 (struct gcs_recv_act*)gu_fifo_get_tail (conn->recv_q);
 
             if (gu_likely (NULL != recv_act)) {
-                // KH: here we add rcvd, which constains act.buf (GCache)
-                // to the queue, which is read by wsrep_replication_process
-                // in gcs_recv()
-                //fprintf(stderr, "KH: gcs_recv_thread -> recv_q. ptr: x%llX, type: %d, size: %ld\n",
-                //  (unsigned long long)(rcvd.act.buf), rcvd.act.type, rcvd.act.buf_len);
                 recv_act->rcvd     = rcvd;
                 recv_act->local_id = this_act_id;
 
@@ -2246,9 +2240,6 @@ long gcs_recv (gcs_conn_t*        conn,
         action->type    = recv_act->rcvd.act.type;
         action->seqno_g = recv_act->rcvd.id;
         action->seqno_l = recv_act->local_id;
-
-        //fprintf(stderr, "KH: recv_q -> replication_thd ptr: x%llX, type: %d, size: %d\n",
-        //    (unsigned long long)(action->buf), action->type, action->size);
 
         if (gu_unlikely (GCS_ACT_CCHANGE == action->type)) {
             err = gu_fifo_cancel_gets (conn->recv_q);

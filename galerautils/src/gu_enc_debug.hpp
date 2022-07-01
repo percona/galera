@@ -5,18 +5,13 @@
 
 namespace gu {
 
-#if 1
-#define S_DEBUG0(format)
-#define S_DEBUG1(format, args...)
-#define S_DEBUG2(format, args...)
+#if 0
+#define S_DEBUG(...)
 #else
-#define S_DEBUG0(format) swrite(format)
-#define S_DEBUG1(format, args...) swrite(format, args)
-#define S_DEBUG2(format, args...) swrite(format, args)
+#define S_DEBUG(format, ...) swrite(format, ##__VA_ARGS__)
 #endif
 // always
-#define S_DEBUG_A0(format) swrite(format)
-#define S_DEBUG_A(format, args...) swrite(format, args)
+#define S_DEBUG_A(format, ...) swrite(format, ##__VA_ARGS__)
 
 
 void swrite(const char* format, ...);

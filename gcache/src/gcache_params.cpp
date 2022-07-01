@@ -3,7 +3,7 @@
  */
 
 #include "GCache.hpp"
-// KH: gcache defaults
+
 static const std::string GCACHE_PARAMS_DIR        ("gcache.dir");
 static const std::string GCACHE_DEFAULT_DIR       ("");
 static const std::string GCACHE_PARAMS_RB_NAME    ("gcache.name");

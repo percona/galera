@@ -649,7 +649,6 @@ namespace galera
 
                         try
                         {
-                            // log_info << "KH: checking if in gcache";
                             wbuf = gcache_.seqno_get_ptr(seqno_g, wsize);
 
                             skip_bytes(socket, msg.len() - offset);
@@ -662,26 +661,32 @@ namespace galera
                         }
                     }
 
-                    // log_info << "KH: In gcache? " << already_cached;
                     if (!already_cached)
                     {
                         if (gu_likely(msg_type != Message::T_SKIP))
                         {
                             wsize = msg.len() - offset;
-                            //log_info << "KH: before gcache.malloc. wsize: " << wsize;
                             void*   const ptr(gcache_.malloc(wsize));
-                            //log_info << "KH: after gcache.malloc";
-                            //fprintf(stderr, "KH: ptr: x%llX\n", (unsigned long long)ptr);
-                            ssize_t const r
-                                (socket.read(gu::AsioMutableBuffer(ptr, wsize)));
-                            //log_info << "KH: after socket.read";
+                            // avoid allocating huge buffers, so receive it in chunks
+                            static const ssize_t recv_buf_size = 32* 1024;
+                            unsigned char recv_buf[recv_buf_size];
+                            ssize_t recv_chunk_size = std::min(wsize, recv_buf_size);
+                            unsigned char* write_ptr = reinterpret_cast<unsigned char*>(ptr);
+                            ssize_t received = 0;
 
-                            if (gu_unlikely(r != wsize))
+                            while (received < wsize) {
+                                ssize_t const r
+                                    (socket.read(gu::AsioMutableBuffer(recv_buf, recv_chunk_size)));
+                                memcpy(write_ptr, recv_buf, r);
+                                received += r;
+                            }
+
+                            if (gu_unlikely(received != wsize))
                             {
                                 gu_throw_error(EPROTO)
                                     << "error reading write set data, "
                                     << "expected " << wsize
-                                    << " bytes, got " << r << " bytes";
+                                    << " bytes, got " << received << " bytes";
                             }
 
                             wbuf = ptr;

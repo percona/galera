@@ -46,7 +46,7 @@ public:
                void*               reserved       = NULL,
                page_size_type      reserved_size  = 0,
                heap_size_type      max_heap       = (1U << 22),   /* 4M  */
-               page_size_type      disk_page_size = (1U << 26));  /* 64M */ // KH: default file size in page store
+               page_size_type      disk_page_size = (1U << 26));  /* 64M */
 
     ~Allocator ();
 
@@ -134,7 +134,7 @@ private:
     private:
 
         FileDescriptor fd_;
-        std::shared_ptr<gu::IMMap>  mmapptr_;  // just to keep mmap_
+        std::shared_ptr<gu::IMMap>  mmapptr_;  // keep mmap_ member as the reference
         gu::IMMap&         mmap_;
     };
 

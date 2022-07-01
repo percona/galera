@@ -87,7 +87,7 @@ gu::Allocator::FileStore::my_new_page (page_size_type const size)
         fname << base_name_
               << '.' << std::dec << std::setfill('0') << std::setw(6) << n_;
 
-        ret = new FilePage(fname.str(), std::max(size, page_size_));  // KH: here file page is allocated
+        ret = new FilePage(fname.str(), std::max(size, page_size_));
 
         assert (ret != 0);
 
@@ -232,7 +232,7 @@ void gu::Allocator::register_params(gu::Config& conf)
     conf.add(ALLOCATOR_PARAMS_ENCRYPTION_CACHE_SIZE, ALLOCATOR_DEFAULT_ENCRYPTION_CACHE_SIZE);
 }
 
-// KH: we can do this hack as these parameters cannot be changed in runtime
+// We can do it this way as these parameters cannot be changed in runtime
 void gu::Allocator::configure_encryption(gu::Config& conf)
 {
     g_encryptOffPages = conf.get<bool>(ALLOCATOR_PARAMS_DISK_PAGES_ENCRYPTION);

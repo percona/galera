@@ -722,9 +722,7 @@ namespace galera
         gu::MemPool<true>&     mem_pool_;
         WriteSetIn             write_set_;
         void* const            buf_;
-public: // KH:
         std::pair<const void*, size_t> action_;
-private:
         bool                   certified_;
         bool                   committed_;
         bool                   exit_loop_;
@@ -1034,8 +1032,7 @@ private:
 
             assert(params_.version_ >= 0 &&
                    params_.version_ <= WriteSetNG::MAX_VERSION);
-// KH: when params_ are extednded with enc params, we need to pass them down
-// here to the Allocator
+
             new (wso) WriteSetOut (params_.working_dir_,
                                    trx_id(), params_.key_format_,
                                    store,

@@ -62,7 +62,7 @@ static EncMMap* getEncMMap(unsigned char* ptr) {
 
 
 // Debug purpose only
-void EncMMap::dumpMappings() {
+void EncMMap::dump_mappings() {
     while (encMmapsLock.test_and_set(std::memory_order_acquire)) {
         std::this_thread::yield();
     }
@@ -70,21 +70,21 @@ void EncMMap::dumpMappings() {
         for (auto mm : encMMaps) {
             S_DEBUG_A("Mappings for EncMMap x%llX (x%llX - x%llX) START\n",
               ptr2ull(mm.first), ptr2ull(mm.second.start_), ptr2ull(mm.second.end_));
-            mm.first->dumpMappingsInt();
+            mm.first->dump_mappings_int();
         }
     encMmapsLock.clear(std::memory_order_release);
 }
-void dumpMappings() {
-    EncMMap::dumpMappings();
+void dump_mappings() {
+    EncMMap::dump_mappings();
 }
 
-void EncMMap::dumpMappingsInt()
+void EncMMap::dump_mappings_int()
 {
-    S_DEBUG_A0("vpage -> ppage mappings start\n");
+    S_DEBUG("vpage -> ppage mappings start\n");
     for (auto kv : vpage2ppage_) {
         S_DEBUG_A("vpage: x%llX, ppage: x%llX\n", ptr2ull(kv.first), ptr2ull(kv.second->ptr_));
     }
-    S_DEBUG_A0("vpage -> ppage mappings end\n");
+    S_DEBUG("vpage -> ppage mappings end\n");
 }
 
 
@@ -169,16 +169,16 @@ void signal_handler(int sig, siginfo_t* info, void* ctx) {
     //    simultaneously (2 threads). In such a case the 2nd one will retry
     //    in a while.
     if (encMmapsLock.test_and_set(std::memory_order_acquire)) {
-        S_DEBUG_A0("signal_handler collision\n");
+        S_DEBUG("signal_handler collision\n");
         return;
     }
     unsigned char *addr = static_cast<unsigned char*>(info->si_addr);
-    S_DEBUG1("addr: x%llX\n", ptr2ull(addr));
+    S_DEBUG("addr: x%llX\n", ptr2ull(addr));
     EncMMap*  encmmap = getEncMMap(addr);
     encMmapsLock.clear(std::memory_order_release);
 
     if (encmmap == nullptr) {
-        S_DEBUG0("calling old signal handler\n");
+        S_DEBUG("calling old signal handler\n");
         if (oldsigact.sa_flags == SA_SIGINFO) {
             oldsigact.sa_sigaction(sig, info, ctx);
         } else {
@@ -189,7 +189,7 @@ void signal_handler(int sig, siginfo_t* info, void* ctx) {
 
     // This is our region. Dispatch to the proper EncMMap object.
     if (!encmmap->lock()) {
-        S_DEBUG_A0("encmmap collision\n");
+        S_DEBUG("encmmap collision\n");
         return;
     }
     encmmap->handle_signal(info);
@@ -223,14 +223,15 @@ EncMMap::EncMMap(const std::string& key, std::shared_ptr<MMap> rawmmap,
 , base_(nullptr)
 , memoryManagerP_(memoryManagerPool.allocate(cachePageSize, cacheSize))
 , memoryManager_(*memoryManagerP_)
-, page2protectionGuard_()
-, page2protection_(nullptr)
+, vpage2protectionGuard_()
+, vpage2protection_(nullptr)
 , vpage2ppage_()
 , pagesCnt_(0)
 , mapped_(mmap_ptr_ != MAP_FAILED)
 , lastPageSize_(pageSize_)
 , encryptionStartOffset_(encryptionStartOffset)
 , defaultPageProtection_(PROT_READ | PROT_WRITE )
+, readAheadCnt_(0)
 , lock_(ATOMIC_FLAG_INIT)
 , encryptor_()
 , decryptor_()
@@ -259,11 +260,11 @@ EncMMap::EncMMap(const std::string& key, std::shared_ptr<MMap> rawmmap,
     }
 
     S_DEBUG_A("EncMMap::EncMMap() allocated pages cnt: %ld\n", pagesCnt_);
-    page2protectionGuard_ = std::shared_ptr<int>(new int[pagesCnt_], [](int *p) { delete[] p; });
-    page2protection_ = page2protectionGuard_.get();
+    vpage2protectionGuard_ = std::shared_ptr<int>(new int[pagesCnt_], [](int *p) { delete[] p; });
+    vpage2protection_ = vpage2protectionGuard_.get();
     addEncMMap(this, base_, vMemSize_);
 
-    // we set up page2protection_ map inside
+    // we set up vpage2protection_ map inside
     set_key(key);
 }
 
@@ -306,19 +307,19 @@ void EncMMap::dont_need() const {
 }
 
 void EncMMap::mprotectd(unsigned char *ptr, size_t size, int prot) const {
-    S_DEBUG1("mprotect ptr: x%llX, size: %ld, prot: %d\n",
+    S_DEBUG("mprotect ptr: x%llX, size: %ld, prot: %d\n",
       ptr2ull(ptr), size, prot);
     if (0 != mprotect(ptr, size, prot)) {
-        S_DEBUG1("mprotect failed. errno: %d, msg: %s\n", errno, strerror(errno));
+        S_DEBUG("mprotect failed. errno: %d, msg: %s\n", errno, strerror(errno));
     }
 
     size_t firstPageNo = page_number(ptr);
     if (gu_likely(size == pageSize_)) {
-        page2protection_[firstPageNo] = prot;
+        vpage2protection_[firstPageNo] = prot;
     } else {
         size_t pagesCnt = size/pageSize_;
         pagesCnt = (size%pageSize_) ? pagesCnt+1 : pagesCnt;
-        memset(&(page2protection_[firstPageNo]), prot, sizeof(int) * pagesCnt);
+        memset(&(vpage2protection_[firstPageNo]), prot, sizeof(int) * pagesCnt);
     }
 }
 
@@ -326,7 +327,7 @@ void EncMMap::mprotectd(unsigned char *ptr, size_t size, int prot) const {
 void EncMMap::sync(void *addr, size_t length) const {
     unsigned char* addrU = reinterpret_cast<unsigned char*>(addr);
 
-    S_DEBUG1("sync() addr: %llX, length: %ld\n", ptr2ull(addr), length);
+    S_DEBUG("sync() addr: %llX, length: %ld\n", ptr2ull(addr), length);
 
     size_t firstPageToSync = page_number(addrU);
     unsigned char* vpageEnd = addrU + length;
@@ -345,18 +346,18 @@ void EncMMap::sync(void *addr, size_t length) const {
             continue;
         }
 
-        int protection = page2protection_[pageNo];
+        int protection = vpage2protection_[pageNo];
         unsigned char* vpageStart = kv->first;
 
-        S_DEBUG1("sync pageNo: %d, prot: %d (x%llX - x%llX)\n",
-            pageNo, page2protection_[pageNo], ptr2ull(vpageStart), ptr2ull(vpageStart)+pageSize_);
+        S_DEBUG("sync pageNo: %d, prot: %d (x%llX - x%llX)\n",
+            pageNo, vpage2protection_[pageNo], ptr2ull(vpageStart), ptr2ull(vpageStart)+pageSize_);
 
         if(protection == (PROT_READ | PROT_WRITE)) {
             // flush
             mprotectd(vpageStart, pageSize_, PROT_READ);
             unsigned char* dstPtr = mmaprawPtr_ + pageNo * pageSize_;
             encrypt(dstPtr, vpageStart, pageSize_, pageNo);
-            S_DEBUG0("    -> flushed\n");
+            S_DEBUG("    -> flushed\n");
             mprotectd(vpageStart, pageSize_, defaultPageProtection_);
         }
     }
@@ -368,16 +369,16 @@ void EncMMap::sync(void *addr, size_t length) const {
 void EncMMap::sync() const {
     for (auto kv = vpage2ppage_.begin(); kv != vpage2ppage_.end(); ++kv) {
         int pageNo = page_number(kv->first);
-        int protection = page2protection_[pageNo];
+        int protection = vpage2protection_[pageNo];
         unsigned char* vpageStart = kv->first;
-        S_DEBUG1("sync() pageNo: %d, prot: %d (x%llX - x%llX)\n",
-            pageNo, page2protection_[pageNo], ptr2ull(vpageStart), ptr2ull(vpageStart)+pageSize_);
+        S_DEBUG("sync() pageNo: %d, prot: %d (x%llX - x%llX)\n",
+            pageNo, vpage2protection_[pageNo], ptr2ull(vpageStart), ptr2ull(vpageStart)+pageSize_);
         if(protection == (PROT_READ | PROT_WRITE)) {
             // flush
             mprotectd(vpageStart, pageSize_, PROT_READ);
             unsigned char* dstPtr = mmaprawPtr_ + pageNo*pageSize_;
             encrypt(dstPtr, vpageStart, pageSize_, pageNo);
-            S_DEBUG0("    -> flushed\n");
+            S_DEBUG("    -> flushed\n");
             mprotectd(vpageStart, pageSize_, defaultPageProtection_);
         }
     }
@@ -386,7 +387,7 @@ void EncMMap::sync() const {
 }
 
 void EncMMap::unmap() {
-    // todo: For RecordSet cache and GCache overflow pages this sync is not needed
+    // For RecordSet cache and GCache overflow pages this sync is not needed
     // if we unmap it means we will never map again, so we are not interested
     // with the content anymore.
     if (syncOnDestroy_) {
@@ -422,6 +423,15 @@ void EncMMap::set_key(const std::string& key) {
     vpage2ppage_.clear();
 }
 
+void EncMMap::set_access_mode(AccessMode mode) {
+    if (mode == READ) {
+        readAheadCnt_ = 100;
+        defaultPageProtection_ = PROT_READ;
+    } else if (mode == READ_WRITE){
+        readAheadCnt_ = 0;
+        defaultPageProtection_ = PROT_READ | PROT_WRITE;
+    }
+}
 
 /* When we need to flush pages it is the common situation that they are
    continous. In such a case glue them to avoid partial encryptions.
@@ -432,11 +442,9 @@ struct PageGluer {
     size_t size_;
     int minPageNo_;
     int prevPageNo_;
-    int gluedPages_;
-    static const int glueLimit_ = 25;  // todo: do we need this limit?
 
     PageGluer(): src_(nullptr), dst_(nullptr), size_(0),
-                 minPageNo_(-1), prevPageNo_(-1), gluedPages_(0) {}
+                 minPageNo_(-1), prevPageNo_(-1) {}
     bool glue(int pageNo, unsigned char* src, unsigned char* dst, size_t size) {
         if (prevPageNo_ == -1) {
             prevPageNo_ = pageNo;
@@ -444,14 +452,12 @@ struct PageGluer {
             src_ = src;
             dst_ = dst;
             size_ = size;
-            gluedPages_++;
             return true;
         }
 
-        if (gluedPages_ < glueLimit_ && prevPageNo_ + 1 == pageNo) {
+        if (prevPageNo_ + 1 == pageNo) {
             prevPageNo_ = pageNo;
             size_ += size;
-            gluedPages_++;
             return true;
         }
         return false;
@@ -463,27 +469,26 @@ struct PageGluer {
         size_ = 0;
         minPageNo_ = -1;
         prevPageNo_ = -1;
-        gluedPages_ = 0;
     }
 };
 
 // signal handler. The whole magic happens here
 void EncMMap::handle_signal(siginfo_t* info) {
-    S_DEBUG0("handle_signal >>>>>>>>>>>\n");
+    S_DEBUG("handle_signal >>>>>>>>>>>\n");
     unsigned char* p = static_cast<unsigned char*>(info->si_addr);
     size_t reqPageNo = page_number(p);
     unsigned char* reqPageStart = page_start(p);
 
-    S_DEBUG1("this: x%llX, p: x%llX, reqPageNo: %llu, (x%llX - x%llX)\n",
+    S_DEBUG("this: x%llX, p: x%llX, reqPageNo: %llu, (x%llX - x%llX)\n",
       ptr2ull(this), ptr2ull(p), reqPageNo, ptr2ull(reqPageStart), ptr2ull(reqPageStart)+pageSize_);
 
     assert(reqPageNo < pagesCnt_);
 
-    S_DEBUG1("reqPageNo: %llu, prot: %d\n",
-      reqPageNo, page2protection_[reqPageNo]);
+    S_DEBUG("reqPageNo: %llu, prot: %d\n",
+      reqPageNo, vpage2protection_[reqPageNo]);
 
-    if (page2protection_[reqPageNo] == PROT_NONE) {
-        // page is not mapped. Find free one
+    if (vpage2protection_[reqPageNo] == PROT_NONE) {
+        // Page is not mapped. Find free one
         auto p = memoryManager_.alloc();
         if (!p) {
             size_t freedCout = 0;
@@ -493,17 +498,16 @@ void EncMMap::handle_signal(siginfo_t* info) {
             // free FLUSH_LIMIT pages, no more
             const static int FLUSH_LIMIT = 100;
             int limit = FLUSH_LIMIT;
-            S_DEBUG1("freeing ppages. allocated: %d\n", vpage2ppage_.size());
+            S_DEBUG("Freeing physical pages. allocated: %d\n", vpage2ppage_.size());
 
             PageGluer gluer;
             for (auto& kv : vpage2ppage_) {
-                //S_DEBUG1("freeing ppages. allocated: %d\n", vpage2ppage_.size());
                 size_t pageNo = page_number(kv.first);
-                //S_DEBUG1("pageNo: %d\n", pageNo);
-                int protection = page2protection_[pageNo];
+                int protection = vpage2protection_[pageNo];
                 vpageStart = kv.first;
-                S_DEBUG1("free pageNo: %d, prot: %d (x%llX - x%llX)\n",
+                S_DEBUG("free pageNo: %d, prot: %d (x%llX - x%llX)\n",
                   pageNo, protection, ptr2ull(vpageStart), ptr2ull(vpageStart)+pageSize_);
+                freedCout++;
                 if(protection == (PROT_READ | PROT_WRITE)) {
                     // flush
                     unsigned char* dstPtr = mmaprawPtr_ + pageNo*pageSize_;
@@ -511,27 +515,31 @@ void EncMMap::handle_signal(siginfo_t* info) {
 
                     size_t pageSize = IS_LAST_PAGE(pageNo) ? lastPageSize_ : pageSize_;
                     if (gluer.glue(pageNo, vpageStart, dstPtr, pageSize)) {
-                        S_DEBUG0("glued\n");
-                        // logically should be done in the loop below, but
-                        // do it here to avoid pageNo propagation/recalculation
-                        page2protection_[pageNo] = PROT_NONE;
+                        S_DEBUG("glued\n");
+                        // Marking the page as not mapped should logically 
+                        // be done in the loop below,
+                        // but do it here to avoid pageNo propagation/recalculation
+                        vpage2protection_[pageNo] = PROT_NONE;
+                        flushedCnt++;
+                        S_DEBUG("    -> flushed\n");
                         if (--limit == 0) break;
                         continue;
                     }
-                    S_DEBUG0("not glued\n");
+                    S_DEBUG("not glued\n");
 
+                    // there is at least one page in gluer
                     encrypt(gluer.dst_, gluer.src_, gluer.size_, gluer.minPageNo_);
                     gluer.reset();
                     gluer.glue(pageNo, vpageStart, dstPtr, pageSize);
 
                     flushedCnt++;
-                    S_DEBUG0("    -> flushed\n");
+                    S_DEBUG("    -> flushed\n");
                 }
-                // logically should be done in the loop below, but
-                // do it here to avoid pageNo propagation/recalculation
-                page2protection_[pageNo] = PROT_NONE;
+                // Marking the page as not mapped should logically 
+                // be done in the loop below,
+                // but do it here to avoid pageNo propagation/recalculation
+                vpage2protection_[pageNo] = PROT_NONE;
 
-                freedCout++;
                 if (--limit == 0) break;
             }
 
@@ -546,7 +554,7 @@ void EncMMap::handle_signal(siginfo_t* info) {
                 vpageStart = kv->first;
                 if (mmap(vpageStart, pageSize_, PROT_NONE,
                     MAP_ANONYMOUS|MAP_PRIVATE|MAP_FIXED, -1, 0) == MAP_FAILED) {
-                    S_DEBUG0("unmap failed!");
+                    S_DEBUG("unmap failed!");
                 }
 
                 // it is alread marked as PROT_NONE in the loop above
@@ -556,7 +564,7 @@ void EncMMap::handle_signal(siginfo_t* info) {
                 if (--limit == 0) break;
             }
 
-            S_DEBUG1("flused/freed: %ld / %ld\n", flushedCnt, freedCout);
+            S_DEBUG("flused/freed: %ld / %ld\n", flushedCnt, freedCout);
             p = memoryManager_.alloc();
             assert(p);
         }
@@ -567,33 +575,33 @@ void EncMMap::handle_signal(siginfo_t* info) {
         decrypt(p->ptr_, srcPtr, pageSize_, reqPageNo);
 
         if(MAP_FAILED == mmap(reqPageStart, pageSize_, defaultPageProtection_, MAP_SHARED|MAP_FIXED, p->fd_, p->offset_)) {
-           S_DEBUG0("mmap failed");
+           S_DEBUG("mmap failed");
            assert(0); 
         }
 
-        page2protection_[reqPageNo] = defaultPageProtection_;
+        vpage2protection_[reqPageNo] = defaultPageProtection_;
         vpage2ppage_[reqPageStart] = p;
-        S_DEBUG1("read reqPageNo: %d (x%llX - x%llX) PROT_NONE -> PROT_READ\n",
+        S_DEBUG("read reqPageNo: %d (x%llX - x%llX) PROT_NONE -> PROT_READ\n",
             reqPageNo, ptr2ull(reqPageStart),
             ptr2ull(reqPageStart)+pageSize_);
 
-        // read ahead  // todo: implement this for recovery
-        static size_t READ_AHEAD_CNT = 0; // how many pages should we read ahead
+        // read ahead
+        // This is useful for GCache recovery when the whole buffer is scanned
         size_t totalReadAhead = 0;
-        for (size_t i = 0; i < READ_AHEAD_CNT; ++i) {
+        for (size_t i = 0; i < readAheadCnt_; ++i) {
             reqPageNo = reqPageNo+1 < pagesCnt_ ? reqPageNo+1 : 0;
             // only not mapped pages
-            if (page2protection_[reqPageNo] != PROT_NONE) {
-                S_DEBUG1("read ahead reqPageNo: %d (x%llX - x%llX) already mapped. prot: %d\n",
+            if (vpage2protection_[reqPageNo] != PROT_NONE) {
+                S_DEBUG("read ahead reqPageNo: %d (x%llX - x%llX) already mapped. prot: %d\n",
                   reqPageNo, ptr2ull(page_start(reqPageNo)),
                   ptr2ull(page_start(reqPageNo))+pageSize_,
-                  page2protection_[reqPageNo]);
+                  vpage2protection_[reqPageNo]);
                 continue;
             }
             p = memoryManager_.alloc();
             if (!p) {
                 // keep it simple for now. No swaping when read ahead.
-                S_DEBUG1("read ahead reqPageNo: %d (x%llX - x%llX) no free pages.\n",
+                S_DEBUG("read ahead reqPageNo: %d (x%llX - x%llX) no free pages.\n",
                   reqPageNo, ptr2ull(page_start(reqPageNo)),
                   ptr2ull(page_start(reqPageNo))+pageSize_);
                 break;
@@ -603,20 +611,20 @@ void EncMMap::handle_signal(siginfo_t* info) {
             reqPageStart = page_start(reqPageNo);
 
             mmap(reqPageStart, pageSize_, defaultPageProtection_, MAP_SHARED|MAP_FIXED, p->fd_, p->offset_);
-            page2protection_[reqPageNo] = defaultPageProtection_;
+            vpage2protection_[reqPageNo] = defaultPageProtection_;
             vpage2ppage_[reqPageStart] = p;
             totalReadAhead++;
-            S_DEBUG1("read ahead reqPageNo: %d (x%llX - x%llX) PROT_NONE -> PROT_READ\n",
+            S_DEBUG("read ahead reqPageNo: %d (x%llX - x%llX) PROT_NONE -> PROT_READ\n",
               reqPageNo, ptr2ull(reqPageStart),
               ptr2ull(reqPageStart)+pageSize_);
         }
-        S_DEBUG1("Read ahead %ld pages\n", totalReadAhead);
-    } else if (page2protection_[reqPageNo] == PROT_READ) {
+        S_DEBUG("Read ahead %ld pages\n", totalReadAhead);
+    } else if (vpage2protection_[reqPageNo] == PROT_READ) {
         // page is mapped, just mark is as dirty
         mprotectd(reqPageStart, pageSize_, PROT_READ | PROT_WRITE);
-        S_DEBUG1("reqPageNo: %d PROT_READ -> PROT_READ | PROT_WRITE\n", reqPageNo);
+        S_DEBUG("reqPageNo: %d PROT_READ -> PROT_READ | PROT_WRITE\n", reqPageNo);
     }
-    S_DEBUG0("handle_signal <<<<<<<<<\n");
+    S_DEBUG("handle_signal <<<<<<<<<\n");
 }
 
 

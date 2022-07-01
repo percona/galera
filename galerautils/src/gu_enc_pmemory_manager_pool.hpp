@@ -7,6 +7,15 @@
 
 namespace gu {
 class PMemoryManager;
+struct PMemoryManagerHolder {
+    PMemoryManagerHolder(uint64_t timestamp, std::shared_ptr<PMemoryManager> manager);
+    bool operator <(const PMemoryManagerHolder& rhs) const;
+
+    uint64_t timestamp_;
+    std::shared_ptr<PMemoryManager> manager_;
+    size_t mgrSize_;
+    size_t mgrAllocPageSize_;
+};
 
 /* PMemoryManagerPool is the pool of physical memory managers used by
    MMapEnc objects. Its purpose is to avoid physical memory
@@ -28,7 +37,7 @@ private:
     // accessed from the signal handler context. We access it only
     // when the client request creation of new EncMMap object.
     std::mutex mtx_;
-    std::set<std::shared_ptr<PMemoryManager>> managers_;
+    std::set<PMemoryManagerHolder> managers_;
     size_t poolSizeMax_;
     size_t poolSize_;
 };

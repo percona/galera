@@ -62,10 +62,7 @@ namespace gcache
         gu::Lock lock(mtx);
 
         BufferHeader* bh = ptr2BH(ptr);
-        //if (SEQNO_NONE != bh->seqno_g) {
-        //    fprintf(stderr, "KH: ptr: x%llX, bh: x%llX, seqno: %ld\n",
-        //      (unsigned long long)ptr, (unsigned long long)bh, bh->seqno_g);
-        //}
+
         assert (SEQNO_NONE == bh->seqno_g);
         assert (seqno_g > 0);
         assert (!BH_is_released(bh));
@@ -97,8 +94,6 @@ namespace gcache
 
         seqno2ptr.insert(seqno_g, ptr);
 
-//        fprintf(stderr, "KH: bh: x%llX, bh->seqno_g addr: x%llX\n",
-//          (unsigned long long)bh, (unsigned long long)(&(bh->seqno_g)));
         bh->seqno_g = seqno_g;
         bh->flags  |= (BUFFER_SKIPPED * skip);
         bh->type    = type;

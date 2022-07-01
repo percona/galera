@@ -74,9 +74,6 @@ namespace gcache
     static inline void
     BH_assert_clear (const BufferHeader* const bh)
     {
-        //if (bh->seqno_g != 0) {
-        //    fprintf(stderr, "KH: bh: x%llX, seqno: %lu, size: %u, store: %d\n", (unsigned long long)bh, bh->seqno_g, bh->size, bh->store);
-        //}
         assert(0 == bh->seqno_g);
         assert(0 == bh->size);
         assert(0 == bh->ctx);

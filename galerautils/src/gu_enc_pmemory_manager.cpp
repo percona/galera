@@ -62,7 +62,7 @@ PMemoryManager::PMemoryManager(size_t size, size_t allocPageSize)
         gu_throw_error(errno) << "PMemoryManager::PMemoryManager() mmap() failed";
     }
     if (mlock(base_, size_)) {
-        S_DEBUG_A0("PMemoryManager::PMemoryManager() mlock failed. It will still work, "
+        S_DEBUG("PMemoryManager::PMemoryManager() mlock failed. It will still work, "
                    "but swap pages into the disk, so performance will be affected\n");
     }
 #if CLEAR_BUFFERS
@@ -82,7 +82,7 @@ PMemoryManager::PMemoryManager(size_t size, size_t allocPageSize)
         myPages_.push_back(page);
     }
     freePages_ = myPages_;
-    S_DEBUG_A0("---PMemoryManager::PMemoryManager()\n");
+    S_DEBUG("---PMemoryManager::PMemoryManager()\n");
 }
 
 PMemoryManager::~PMemoryManager() {
@@ -95,7 +95,7 @@ PMemoryManager::~PMemoryManager() {
 
     if (mapped_) {
         if (munmap (base_, size_) < 0) {
-            S_DEBUG_A0("unmap failed");
+            S_DEBUG("unmap failed");
         }
     }
     mapped_ = false;
@@ -111,9 +111,9 @@ void PMemoryManager::GetCreateParams(size_t* size, size_t* allocPageSize) {
 
 std::shared_ptr<PPage> PMemoryManager::alloc() {
     // no free pages. Need to free some pages before allocating.
-    S_DEBUG1("PMemoryManager::alloc() freePages: %d\n", freePages_.size());
+    S_DEBUG("PMemoryManager::alloc() freePages: %d\n", freePages_.size());
     if (freePages_.empty()) {
-        S_DEBUG0("PMemoryManager::alloc() no free pages\n");
+        S_DEBUG("PMemoryManager::alloc() no free pages\n");
         return std::shared_ptr<PPage>();
     }
     auto p = freePages_.back();
@@ -122,7 +122,7 @@ std::shared_ptr<PPage> PMemoryManager::alloc() {
 #if CLEAR_BUFFERS
     for(size_t i = 0; i < allocPageSize_; ++i){
         if ((unsigned char)(p->ptr_[i]) != FREE_PAGE_PATTERN) {
-            S_DEBUG_A0("Free page pattern does not mach\n");
+            S_DEBUG("Free page pattern does not mach\n");
             assert(0);
         }
     }
@@ -165,7 +165,7 @@ bool PMemoryManager::createTmpFile()
     }
 
     if (posix_fallocate(fd, 0, size_)) {
-        S_DEBUG_A0("posix_fallocate failed\n");
+        S_DEBUG("posix_fallocate failed\n");
         return true;
     }
     fd_ = fd;

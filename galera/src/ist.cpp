@@ -373,7 +373,6 @@ void galera::ist::Receiver::run()
 {
     auto socket(acceptor_->accept());
     acceptor_->close();
-    //log_info << "KH: galera::ist::Receiver::run() accepted";
 
     /* shall be initialized below, when we know at what seqno preload starts */
     gu::Progress<wsrep_seqno_t>* progress(NULL);
@@ -388,7 +387,7 @@ void galera::ist::Receiver::run()
         p.send_handshake(*socket);
         p.recv_handshake_response(*socket);
         p.send_ctrl(*socket, Ctrl::C_OK);
-        //log_info << "KH: handshake done";
+
         // wait for SST to complete so that we know what is the first_seqno_
         {
             gu::Lock lock(mutex_);
@@ -417,9 +416,7 @@ void galera::ist::Receiver::run()
         while (true)
         {
             std::pair<gcs_action, bool> ret;
-            //log_info << "KH: before recv_ordered";
             p.recv_ordered(*socket, ret);
-            //log_info << "KH: after recv_ordered";
 
             gcs_action& act(ret.first);
 
@@ -429,7 +426,7 @@ void galera::ist::Receiver::run()
                 assert(0    == act.seqno_g);
                 assert(NULL == act.buf);
                 assert(0    == act.size);
-                //log_info << "KH: eof received, closing socket";
+                log_debug << "eof received, closing socket";
                 break;
             }
 
@@ -797,12 +794,10 @@ void galera::ist::Sender::send(wsrep_seqno_t first, wsrep_seqno_t last,
         Proto p(gcache_,
                 version_, conf_.get(CONF_KEEP_KEYS, CONF_KEEP_KEYS_DEFAULT));
         int32_t ctrl;
-        // log_info << "KH: before hanshake";
+
         p.recv_handshake(*socket_);
         p.send_handshake_response(*socket_);
-        // log_info << "KH: handshake done";
         ctrl = p.recv_ctrl(*socket_);
-        // log_info << "KH: after recv_ctrl";
 
         if (ctrl < 0)
         {
@@ -842,10 +837,8 @@ void galera::ist::Sender::send(wsrep_seqno_t first, wsrep_seqno_t last,
                 //         << ", size " << buf_vec[i].size() << ", preload: "
                 //         << preload_flag;
                 p.send_ordered(*socket_, buf_vec[i], preload_flag);
-                log_info << "after send ordered";
                 if (buf_vec[i].seqno_g() == last)
                 {
-                    //log_info << "KH: sending eof";
                     send_eof(p, *socket_);
                     return;
                 }

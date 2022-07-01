@@ -176,13 +176,12 @@ namespace gcache
 
         ProgressCallback*  pcb_;
         bool encrypt_;
-
         int masterKeyId_;
         gu::UUID masterKeyUuid_;
         std::string fileKey_;
         gu::MasterKeyProvider &masterKeyProvider_;
         gu::FileDescriptor fd_;
-        std::shared_ptr<gu::IMMap>  mmapptr_;  // to keep mmap_ member
+        std::shared_ptr<gu::IMMap>  mmapptr_;  // keep mmap_ member as the reference
         gu::IMMap&         mmap_;
         char*        const preamble_; // ASCII text preamble
         int64_t*     const header_;   // cache binary header
@@ -227,9 +226,7 @@ namespace gcache
         static std::string const PR_KEY_ENC_CRC;
 
         void          write_preamble(bool synced);
-public:
-        void          open_preamble(bool recover);
-private:
+        void          open_preamble(bool const recover);
         void          close_preamble();
 
         // returns lower bound (not inclusive) of valid seqno range

@@ -22,7 +22,14 @@ public:
     virtual void sync(void *addr, size_t length) const = 0;
     virtual void sync() const = 0;
     virtual void unmap() = 0;
+
     virtual void set_key(const std::string& key) = 0;
+
+    enum AccessMode {
+        READ,
+        READ_WRITE
+    };
+    virtual void set_access_mode(AccessMode mode) = 0;
     virtual ~IMMap(){};
 };
 
@@ -43,6 +50,7 @@ public:
     void sync() const override;
     void unmap() override;
     void set_key(const std::string& key) override {}
+    void set_access_mode(AccessMode mode) override {};
 
 private:
 

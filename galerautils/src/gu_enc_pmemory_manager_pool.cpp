@@ -3,44 +3,75 @@
 #include "gu_enc_debug.hpp"
 
 namespace gu {
+static uint64_t timestampServer = 0;
+static const uint64_t AGE_THREASHOLD = 10;
+static const uint64_t ERASE_TRIGGER = 10;
+
+PMemoryManagerHolder::PMemoryManagerHolder(uint64_t timestamp, std::shared_ptr<PMemoryManager> manager)
+: timestamp_(timestamp)
+, manager_(manager)
+, mgrSize_(0)
+, mgrAllocPageSize_(0)
+{
+    manager_->GetCreateParams(&mgrSize_, &mgrAllocPageSize_);
+}
+
+bool PMemoryManagerHolder::operator <(const PMemoryManagerHolder& rhs) const {
+    return mgrSize_ < rhs.mgrSize_ && mgrAllocPageSize_ < rhs.mgrAllocPageSize_;
+}
+
 
 PMemoryManagerPool::PMemoryManagerPool(size_t managersPoolSize)
 : mtx_()
 , managers_()
 , poolSizeMax_(managersPoolSize)
 , poolSize_(0) {
-
 }
 
 std::shared_ptr<PMemoryManager> PMemoryManagerPool::allocate(size_t allocPageSize, size_t size) {
     std::lock_guard<std::mutex> l(mtx_);
-    S_DEBUG1("PMemoryManagerPool::allocate(). size: %ld, pageSize: %ld, Pool size: %ld/%ld\n",
+    std::shared_ptr<PMemoryManager> result;
+
+    S_DEBUG("PMemoryManagerPool::allocate(). size: %ld, pageSize: %ld, Pool size: %ld/%ld\n",
       size, allocPageSize, poolSize_, poolSizeMax_);
-    for (auto mgr : managers_) {
-        size_t mgrSize, mgrAllocPageSize;
-        mgr->GetCreateParams(&mgrSize, &mgrAllocPageSize);
-        if (mgrSize >= size && mgrAllocPageSize >= allocPageSize) {
+    timestampServer++;
+    bool doErase = (timestampServer % ERASE_TRIGGER == 0);
+
+    for (auto &mgr : managers_) {
+        if (!result && mgr.mgrSize_ >= size && mgr.mgrAllocPageSize_ >= allocPageSize) {
+            result = mgr.manager_;
             managers_.erase(mgr);
             poolSize_--;
-            S_DEBUG0("Reusing PMemoryManager\n");
-            return mgr;
+            S_DEBUG("Reusing PMemoryManager\n");
+        }
+        if(result && !doErase) {
+            break;
+        }
+
+        // once every ERASE_THREASHOLD allocations try to erase obsolete managers
+        if (mgr.timestamp_ + AGE_THREASHOLD < timestampServer ||
+            mgr.timestamp_ > timestampServer) {
+            S_DEBUG("PMemoryManagerPool::allocate(). Removing obsolete manager."
+                     " Manager timestamp: %llu, current timestamp: %llu"
+                     " Manager size: %ld\n", mgr.timestamp_, timestampServer, mgr.mgrSize_);
+            managers_.erase(mgr);
         }
     }
-    S_DEBUG0("Creating new PMemoryManager\n");
-    auto mgr = std::make_shared<PMemoryManager>(size, allocPageSize);
-    return mgr;
+    if (!result) {
+        S_DEBUG("Creating new PMemoryManager\n");
+        result = std::make_shared<PMemoryManager>(size, allocPageSize);
+    }
+    return result;
 }
 
 void PMemoryManagerPool::free(std::shared_ptr<PMemoryManager>mgr) {
     std::lock_guard<std::mutex> l(mtx_);
     if (poolSize_ < poolSizeMax_) {
-        managers_.insert(mgr);
+        managers_.emplace(timestampServer, mgr);
         poolSize_++;
-        S_DEBUG1("PMemoryManager returned to pool. Pool size: %ld/%ld\n", poolSize_, poolSizeMax_);
+        S_DEBUG("PMemoryManager returned to pool. Pool size: %ld/%ld\n", poolSize_, poolSizeMax_);
     } else {
-        S_DEBUG1("PMemoryManager freed, but not to the pool. Pool size: %ld/%ld\n", poolSize_, poolSizeMax_);
+        S_DEBUG("PMemoryManager freed, but not to the pool. Pool size: %ld/%ld\n", poolSize_, poolSizeMax_);
     }
 }
-    
-    
 }

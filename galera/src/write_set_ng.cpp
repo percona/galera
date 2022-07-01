@@ -217,7 +217,6 @@ WriteSetIn::init (ssize_t const st)
 
     if (gu_likely(st > 0)) /* checksum enforced */
     {
-#if 1 // KH:
         if (size_ >= st)
         {
             /* buffer too big, start checksumming in background */
@@ -235,7 +234,7 @@ WriteSetIn::init (ssize_t const st)
 
             /* fall through to checksum in foreground */
         }
-#endif
+
         checksum();
         gu_trace(checksum_fin());
     }

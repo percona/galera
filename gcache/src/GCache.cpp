@@ -7,6 +7,7 @@
 
 #include <gu_logger.hpp>
 
+
 #include <cerrno>
 #include <unistd.h>
 
@@ -115,7 +116,6 @@ namespace gcache
 
 gcache_t* gcache_create (gu_config_t* conf, const char* data_dir, gu::MasterKeyProvider& mk_provider)
 {
-
     /* this funciton is used only in tests */
     gcache::GCache* gc = new gcache::GCache (
         NULL, *reinterpret_cast<gu::Config*>(conf), data_dir, mk_provider);

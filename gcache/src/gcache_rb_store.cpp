@@ -20,15 +20,8 @@
 #include <cassert>
 #include <iostream> // std::cerr
 
-static gcache::RingBuffer *rbInstance = nullptr;
-
-void open_rb_preamble() {
-    //rbInstance->open_preamble(true);
-}
-
 namespace gcache
 {
-
     static inline size_t check_size (size_t s)
     {
         return s + RingBuffer::pad_size() + sizeof(BufferHeader);
@@ -142,7 +135,7 @@ namespace gcache
 
     RingBuffer::~RingBuffer ()
     {
-        // keyringManager_.SetKeyRotationRequestObserver([](){});
+        masterKeyProvider_.RegisterKeyRotationRequestObserver([](){ return false; });
         close_preamble();
         open_ = false;
         mmap_.sync();
@@ -639,13 +632,17 @@ namespace gcache
 
         std::string oldMKName = gu::CreateMasterKeyName(masterKeyUuid_, masterKeyId_);
         std::string oldMK = masterKeyProvider_.GetKey(oldMKName);
+        if (oldMK.length() == 0) return true;
+
         // decrypt fileKey_ with the old MK
         std::string unencryptedFileKey = gu::DecryptKey(gu::decode64(fileKey_), oldMK);
 
         masterKeyId_++;
         std::string newMKName = gu::CreateMasterKeyName(masterKeyUuid_, masterKeyId_);
-        masterKeyProvider_.CreateKey(newMKName);
+        if(masterKeyProvider_.CreateKey(newMKName)) return true;
         std::string newMK = masterKeyProvider_.GetKey(newMKName);
+        if (newMK.length() == 0) return true;
+
         // encrypt with new MK
         fileKey_ = gu::encode64(gu::EncryptKey(unencryptedFileKey, newMK));
 
@@ -729,7 +726,7 @@ namespace gcache
     }
 
     void
-    RingBuffer::open_preamble(bool do_recover)
+    RingBuffer::open_preamble(bool const do_recover)
     {
         int version(0); // used only for recovery on upgrade
         uint8_t* const preamble(reinterpret_cast<uint8_t*>(preamble_));
@@ -946,6 +943,7 @@ namespace gcache
         uint8_t* segment_start(start_);
         uint8_t* segment_end(end_ - sizeof(BufferHeader));
 
+        mmap_.set_access_mode(gu::IMMap::READ);
         /* start at offset (first segment) if we know it and it is valid */
         if (offset >= 0)
         {
@@ -1067,7 +1065,6 @@ namespace gcache
                     {
                         try
                         {
-                            //fprintf(stderr, "KH: inserting: %ld,%ld, ptr: x%llX\n", seqno_g, bh->seqno_g, (unsigned long long)(bh+1));
                             seqno2ptr_.insert(seqno_g, bh + 1);
                         }
                         catch (std::exception& e)
@@ -1200,6 +1197,7 @@ namespace gcache
             dump_map();
         }
 
+        mmap_.set_access_mode(gu::IMMap::READ_WRITE);
         return erase_up_to;
     }
 
@@ -1208,7 +1206,6 @@ namespace gcache
                                  seqno_t     const seqno)
     {
         const BufferHeader* const bh(ptr2BH(ptr));
-        //fprintf(stderr, "KH: ptr: x%llX, seqno: %ld\n", (unsigned long long)ptr, bh->seqno_g);
         if (bh->seqno_g != seqno)
         {
             assert(0);

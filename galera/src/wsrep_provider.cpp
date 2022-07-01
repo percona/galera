@@ -153,16 +153,10 @@ char* galera_parameters_get (wsrep_t* gh)
     }
 }
 
-extern void open_rb_preamble();
 extern "C"
 wsrep_status_t galera_enc_set_key(wsrep_t* gh, const wsrep_enc_key_t*key)
 {
-#if 0
     return WSREP_NOT_IMPLEMENTED;
-#else
-    open_rb_preamble();
-    return WSREP_OK;
-#endif
 }
 
 extern "C"

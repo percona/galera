@@ -14,7 +14,6 @@
 #include <gu_lock.hpp> // for gu::Mutex and gu::Cond
 #include <gu_config.hpp>
 #include <gu_gtid.hpp>
-#include <gu_enc_mmap_factory.hpp>  // for gu::EncryptionCtx
 
 #include <string>
 #include <iostream>

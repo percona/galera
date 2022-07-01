@@ -84,7 +84,6 @@ add_library(galerautilsxx STATIC
   gu_config.cpp
   gu_fdesc.cpp
   gu_mmap.cpp
-  gu_mmapenc.cpp
   gu_alloc.cpp
   gu_rset.cpp
   gu_resolver.cpp
