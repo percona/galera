@@ -678,6 +678,7 @@ namespace galera
                                 ssize_t const r
                                     (socket.read(gu::AsioMutableBuffer(recv_buf, recv_chunk_size)));
                                 memcpy(write_ptr, recv_buf, r);
+                                write_ptr += r;
                                 received += r;
                             }
 

@@ -480,22 +480,23 @@ namespace gu
         size_t written(0);
         for (auto b(bufs.begin()); b != bufs.end(); ++b)
         {
-            // fprintf(stderr, "KH: write. data: x%llX, size: %ld\n",
-            //  (unsigned long long)b->data(), b->size());
             if (b->size() > 0)
             {
-#if 1
-// KH:
-                void *p = malloc(b->size());
-                memcpy(p, b->data(), b->size());
-                written += socket.write(AsioConstBuffer(p, b->size()));
-                free(p);
-#else
-                written += socket.write(AsioConstBuffer(b->data(), b->size()));
-#endif
+                // avoid allocating huge buffers, so send it in chunks
+                static const ssize_t send_buf_size = 32* 1024;
+                unsigned char send_buf[send_buf_size];
+                const unsigned char* src_ptr = reinterpret_cast<const unsigned char*>(b->data());
+                ssize_t to_send = b->size();
+
+                while (to_send > 0) {
+                    ssize_t send_chunk_size = std::min(to_send, send_buf_size);
+                    memcpy(send_buf, src_ptr, send_chunk_size);
+                    size_t sent = socket.write(AsioConstBuffer(send_buf, b->size()));
+                    written += sent;
+                    to_send -= sent;
+                    src_ptr += sent;
+                }
             }
-            // fprintf(stderr, "KH: after write. data: x%llX, size: %ld\n",
-            //  (unsigned long long)b->data(), b->size());
         }
         return written;
     }

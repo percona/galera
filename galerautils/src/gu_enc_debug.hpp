@@ -6,9 +6,9 @@
 namespace gu {
 
 #if 0
-#define S_DEBUG(...)
-#else
 #define S_DEBUG(format, ...) swrite(format, ##__VA_ARGS__)
+#else
+#define S_DEBUG(...)
 #endif
 // always
 #define S_DEBUG_A(format, ...) swrite(format, ##__VA_ARGS__)

@@ -97,7 +97,7 @@ namespace gcache
     private:
 
         gu::FileDescriptor fd_;
-        std::shared_ptr<gu::IMMap>  mmapptr_;  // just to keep mmap_
+        std::shared_ptr<gu::IMMap>  mmapptr_;  // keep mmap_ member as the reference
         gu::IMMap&         mmap_;
         void* const        ps_;
         uint8_t*           next_;
