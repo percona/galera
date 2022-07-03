@@ -491,7 +491,7 @@ namespace gu
                 while (to_send > 0) {
                     ssize_t send_chunk_size = std::min(to_send, send_buf_size);
                     memcpy(send_buf, src_ptr, send_chunk_size);
-                    size_t sent = socket.write(AsioConstBuffer(send_buf, b->size()));
+                    size_t sent = socket.write(AsioConstBuffer(send_buf, send_chunk_size));
                     written += sent;
                     to_send -= sent;
                     src_ptr += sent;

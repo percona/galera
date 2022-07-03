@@ -37,10 +37,12 @@ std::shared_ptr<PMemoryManager> PMemoryManagerPool::allocate(size_t allocPageSiz
     timestampServer++;
     bool doErase = (timestampServer % ERASE_TRIGGER == 0);
 
-    for (auto &mgr : managers_) {
-        if (!result && mgr.mgrSize_ >= size && mgr.mgrAllocPageSize_ >= allocPageSize) {
-            result = mgr.manager_;
-            managers_.erase(mgr);
+    for (auto iter = managers_.begin(); iter != managers_.end();) {
+        if (!result && iter->mgrSize_ >= size && iter->mgrAllocPageSize_ >= allocPageSize) {
+            result = iter->manager_;
+            auto eraseIter = iter;
+            ++iter;
+            managers_.erase(eraseIter);
             poolSize_--;
             S_DEBUG("Reusing PMemoryManager\n");
         }
@@ -49,12 +51,20 @@ std::shared_ptr<PMemoryManager> PMemoryManagerPool::allocate(size_t allocPageSiz
         }
 
         // once every ERASE_THREASHOLD allocations try to erase obsolete managers
-        if (mgr.timestamp_ + AGE_THREASHOLD < timestampServer ||
-            mgr.timestamp_ > timestampServer) {
+        if (iter == managers_.end()) {
+            break;
+        }
+
+        if (iter->timestamp_ + AGE_THREASHOLD < timestampServer ||
+            iter->timestamp_ > timestampServer) {
             S_DEBUG("PMemoryManagerPool::allocate(). Removing obsolete manager."
                      " Manager timestamp: %llu, current timestamp: %llu"
-                     " Manager size: %ld\n", mgr.timestamp_, timestampServer, mgr.mgrSize_);
-            managers_.erase(mgr);
+                     " Manager size: %ld\n", iter->timestamp_, timestampServer, iter->mgrSize_);
+            auto eraseIter = iter;
+            ++iter;
+            managers_.erase(eraseIter);
+        } else {
+            ++iter;
         }
     }
     if (!result) {
