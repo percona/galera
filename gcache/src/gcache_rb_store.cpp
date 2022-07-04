@@ -829,20 +829,37 @@ namespace gcache
                 masterKeyId_ = 0;
             }
 
-            std::string mkName;
-            if (masterKeyId_ == 0 || masterKeyUuid_ == GU_UUID_NIL) {
-                // no MasterKey. Generate the new one
-                masterKeyUuid_ = gu::UUID(0,0);
-                masterKeyId_ = 1;
+            std::string mk;
+            bool allowRetry = true;
+            while (allowRetry) {
+                std::string mkName;
+                if (masterKeyId_ == 0 || masterKeyUuid_ == GU_UUID_NIL) {
+                    // no MasterKey. Generate the new one
+                    masterKeyUuid_ = gu::UUID(0,0);
+                    masterKeyId_ = 1;
 
-                mkName = gu::CreateMasterKeyName(masterKeyUuid_, masterKeyId_);
-                masterKeyProvider_.CreateKey(mkName);
-            } else {
-                mkName = gu::CreateMasterKeyName(masterKeyUuid_, masterKeyId_);
+                    mkName = gu::CreateMasterKeyName(masterKeyUuid_, masterKeyId_);
+                    masterKeyProvider_.CreateKey(mkName);
+
+                    // This is new key. Do not allow retry.
+                    allowRetry = false;
+                } else {
+                    mkName = gu::CreateMasterKeyName(masterKeyUuid_, masterKeyId_);
+                }
+
+                // 1. Get MK from encryption context
+                mk = masterKeyProvider_.GetKey(mkName);
+                if (mk.length() != 0) break;
+
+                // MK not found. Generate the new one, but try only once.
+                masterKeyId_ = 0;
+                fileKey_.clear();
             }
 
-            // 1. Get MK from encryption context
-            std::string mk = masterKeyProvider_.GetKey(mkName);
+            if (mk.length() == 0) {
+                log_error << "GCache ring buffer master key not generated / not found";
+                abort();
+            }
 
             // 2. Decrypt fileKey_ (or generate the new one)
             std::string unencryptedFileKey;
