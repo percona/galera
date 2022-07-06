@@ -178,7 +178,7 @@ void signal_handler(int sig, siginfo_t* info, void* ctx) {
     encMmapsLock.clear(std::memory_order_release);
 
     if (encmmap == nullptr) {
-        S_DEBUG("calling old signal handler\n");
+        S_DEBUG_A("calling old signal handler\n");
         if (oldsigact.sa_flags == SA_SIGINFO) {
             oldsigact.sa_sigaction(sig, info, ctx);
         } else {
@@ -197,15 +197,12 @@ void signal_handler(int sig, siginfo_t* info, void* ctx) {
 }
 
 static void install_signal_handler() {
-	if (sigaction(SIGSEGV, nullptr, &oldsigact) == -1) {
-        gu_throw_error(errno) << "install_signal_handler() getting old signal handler failed";
-    }
-
 	struct sigaction sa;
 	sigemptyset(&sa.sa_mask);
-	sa.sa_flags = SA_SIGINFO;
+	sa.sa_flags = SA_SIGINFO | SA_NODEFER;
+
 	sa.sa_sigaction = &signal_handler;
-	if (sigaction(SIGSEGV, &sa, nullptr) == -1) {
+	if (sigaction(SIGSEGV, &sa, &oldsigact) == -1) {
         gu_throw_error(errno) << "install_signal_handler() signal handler installation failed";
     }
 }
