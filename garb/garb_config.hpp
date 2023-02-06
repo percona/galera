@@ -32,6 +32,7 @@ public:
     const std::string& coredumper() const { return coredumper_; }
 #endif
     bool               exit()    const { return exit_   ; }
+    bool               debug()    const { return debug_   ; }
     const std::string& recv_script() const { return recv_script_    ; }
 
 private:
@@ -50,6 +51,7 @@ private:
 #if defined(WITH_COREDUMPER) && WITH_COREDUMPER
     std::string coredumper_;
 #endif
+    bool debug_;
     bool exit_; /* Exit on --help or --version */
 
 }; /* class Config */

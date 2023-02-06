@@ -49,12 +49,14 @@ Config::Config (int argc, char* argv[])
 #if defined(WITH_COREDUMPER) && WITH_COREDUMPER
       coredumper_ (),
 #endif
+      debug_   (false),
       exit_    (false)
 {
     po::options_description other ("Other options");
     other.add_options()
         ("version,v", "Print version & exit")
         ("help,h",    "Show help message & exit")
+        ("debug",     "Enable debug prints")
         ;
 
     // only these are read from cfg file
@@ -72,8 +74,7 @@ Config::Config (int argc, char* argv[])
         ("options,o",   po::value<std::string>(&options_),     "GCS/GCOMM option list")
         ("log,l",       po::value<std::string>(&log_),         "Log file")
         ("recv-script", po::value<std::string>(&recv_script_), "SST request receive script")
-        ("workdir,w",po::value<std::string>(&workdir_),
-         "Daemon working directory")
+        ("workdir,w",po::value<std::string>(&workdir_),        "Daemon working directory")
         ;
 
     po::options_description cfg_opt;
@@ -107,6 +108,12 @@ Config::Config (int argc, char* argv[])
         log_info << GALERA_VER << "." << GALERA_REV;
         exit_= true;
         return;
+    }
+
+    if (vm.count("debug"))
+    {
+        debug_ = true;
+        gu_conf_debug_on();
     }
 
     if (vm.count("cfg"))
@@ -207,7 +214,8 @@ std::ostream& operator << (std::ostream& os, const Config& c)
        << "\n\tcfg:         " << c.cfg()
        << "\n\tlog:         " << c.log()
        << "\n\trecv_script: " << c.recv_script()
-       << "\n\tworkdir: " << c.workdir();
+       << "\n\tworkdir:     " << c.workdir()
+       << "\n\tdebug:       " << c.debug();;
     return os;
 }
 
