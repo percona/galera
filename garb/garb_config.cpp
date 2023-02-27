@@ -56,7 +56,6 @@ Config::Config (int argc, char* argv[])
     other.add_options()
         ("version,v", "Print version & exit")
         ("help,h",    "Show help message & exit")
-        ("debug",     "Enable debug prints")
         ;
 
     // only these are read from cfg file
@@ -74,7 +73,8 @@ Config::Config (int argc, char* argv[])
         ("options,o",   po::value<std::string>(&options_),     "GCS/GCOMM option list")
         ("log,l",       po::value<std::string>(&log_),         "Log file")
         ("recv-script", po::value<std::string>(&recv_script_), "SST request receive script")
-        ("workdir,w",po::value<std::string>(&workdir_),        "Daemon working directory")
+        ("workdir,w",   po::value<std::string>(&workdir_),     "Daemon working directory")
+        ("debug",       po::value<bool>(&debug_),              "Enable debug prints")
         ;
 
     po::options_description cfg_opt;
@@ -110,12 +110,6 @@ Config::Config (int argc, char* argv[])
         return;
     }
 
-    if (vm.count("debug"))
-    {
-        debug_ = true;
-        gu_conf_debug_on();
-    }
-
     if (vm.count("cfg"))
     {
         std::ifstream ifs(cfg_.c_str());
@@ -133,6 +127,12 @@ Config::Config (int argc, char* argv[])
 
         store(parse_config_file(ifs, config), vm);
         notify(vm);
+    }
+
+    if (vm.count("debug"))
+    {
+        if (debug_)
+          gu_conf_debug_on();
     }
 
     if (!vm.count("address"))
