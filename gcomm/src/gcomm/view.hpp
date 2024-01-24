@@ -29,7 +29,8 @@ namespace gcomm
         V_REG      = 0,
         V_TRANS    = 1,
         V_NON_PRIM = 2,
-        V_PRIM     = 3
+        V_PRIM     = 3,
+        V_IDENTITY_CHANGE = 128
     } ViewType;
 
     class ViewId

@@ -147,6 +147,24 @@ std::ostream& gcomm::pc::operator<<(std::ostream& os, const gcomm::pc::Proto& p)
 //
 //
 
+void gcomm::pc::Proto::identity_changed(const gcomm::UUID& old_identity,
+                                        const gcomm::UUID& new_identity) {
+    NodeMap::iterator i, i_next;
+    for (i = instances_.begin(); i != instances_.end(); i = i_next)
+    {
+        i_next = i, ++i_next;
+        const UUID& uuid(NodeMap::key(i));
+
+        if (uuid == old_identity)
+        {
+            const Node sm_state(NodeMap::value(i));
+            instances_.erase(i);
+            instances_.insert_unique(std::make_pair(new_identity, sm_state));
+            log_info << "pc::Proto::identity_changed() " << old_identity << " -> " << new_identity;
+        }
+    }
+}
+
 void gcomm::pc::Proto::send_state()
 {
     log_debug << self_id() << " sending state";
@@ -653,6 +671,12 @@ void gcomm::pc::Proto::handle_reg(const View& view)
 
 void gcomm::pc::Proto::handle_view(const View& view)
 {
+    if (view.type() == V_IDENTITY_CHANGE) {
+        auto old_it = view.left().begin();
+        auto new_it = view.joined().begin();
+        identity_changed(NodeList::key(old_it), NodeList::key(new_it));
+        return;
+    }
 
     // We accept only EVS TRANS and REG views
     if (view.type() != V_TRANS && view.type() != V_REG)
@@ -705,7 +729,7 @@ int gcomm::pc::Proto::cluster_weight() const
     return total_weight;
 }
 
-// Validate state message agains local state
+// Validate state message against local state
 void gcomm::pc::Proto::validate_state_msgs() const
 {
     // #622, #638 Compute max TO seq among states from prim
@@ -1028,7 +1052,7 @@ void gcomm::pc::Proto::handle_state(const Message& msg, const UUID& source)
 
     // Early check for possibly conflicting primary components. The one
     // with greater view id may continue (as it probably has been around
-    // for longer timer). However, this should be configurable policy.
+    // for longer time). However, this should be configurable policy.
     if (prim() == true)
     {
         const Node& si(NodeMap::value(msg.node_map().find(source)));
