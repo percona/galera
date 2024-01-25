@@ -57,6 +57,7 @@ static std::string to_string(const gcomm::ViewType type)
     case gcomm::V_REG:      return "REG";
     case gcomm::V_NON_PRIM: return "NON_PRIM";
     case gcomm::V_PRIM:     return "PRIM";
+    case gcomm::V_IDENTITY_CHANGE: return "IDENTITY_CHANGE";
     default:
         return "UNKNOWN";
         // gcomm_throw_fatal << "Invalid type value";
@@ -164,7 +165,7 @@ std::ostream& gcomm::operator<<(std::ostream& os, const gcomm::View& view)
 {
     os << "Current view of cluster as seen by this node\n";
     os << "view (";
-    if (view.is_empty() == true)
+    if (view.is_empty() == true && view.type() != V_IDENTITY_CHANGE)
     {
         os << "(empty)";
     }

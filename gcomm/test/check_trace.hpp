@@ -91,6 +91,8 @@ namespace gcomm
                     <<  " source view " << msg.source_view_id();
                 gcomm_assert(contains(msg.source()) == true);
                 break;
+            case V_IDENTITY_CHANGE:
+                break;
             case V_NONE:
                 gu_throw_fatal;
                 break;

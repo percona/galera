@@ -244,6 +244,8 @@ private:
     void handle_user(const Message&, const Datagram&,
                      const ProtoUpMeta&);
     void deliver_view(bool bootstrap = false);
+    void identity_changed(const gcomm::UUID& old_identity,
+                          const gcomm::UUID& new_identity);
 
     UUID   const      my_uuid_;       // Node uuid
     bool              start_prim_;    // Is allowed to start in prim comp

@@ -689,7 +689,7 @@ void gcomm::GMCast::handle_established(Proto* est)
 
     if (i != pending_addrs_.end())
     {
-        log_debug << "Erasing " << remote_addr << " from panding list";
+        log_debug << "Erasing " << remote_addr << " from pending list";
         pending_addrs_.erase(i);
     }
 
@@ -705,6 +705,16 @@ void gcomm::GMCast::handle_established(Proto* est)
         log_info << "remote endpoint " << est->remote_addr()
                  << " changed identity " << AddrList::value(i).uuid().full_str()
                  << " -> " << est->remote_uuid().full_str();
+
+        /* Inform upper protocol layers the new uuid will be used for
+           this node identification. */
+        gcomm::ViewId vid(V_IDENTITY_CHANGE);
+        View view(-1, vid);
+        view.add_joined(est->remote_uuid(), 0);
+        view.add_left(AddrList::value(i).uuid(), 0);
+        ProtoUpMeta meta(UUID::nil(), vid, &view);
+        send_up(Datagram(), meta);
+
         remote_addrs_.erase(i);
         i = remote_addrs_.insert_unique(
             make_pair(est->remote_addr(),

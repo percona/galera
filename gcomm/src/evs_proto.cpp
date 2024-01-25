@@ -2559,6 +2559,12 @@ void gcomm::evs::Proto::handle_up(const void* cid,
         return;
     }
 
+    if (um.source_view_id() == V_IDENTITY_CHANGE)
+    {
+        send_up(rb, um);
+        return;
+    }
+
     gcomm_assert(um.source() != UUID::nil());
 
     try
