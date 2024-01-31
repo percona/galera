@@ -125,7 +125,7 @@ fi
 
 export CC CXX LD_LIBRARY_PATH
 
-CFLAGS=${CFLAGS:-"-O2"}
+CFLAGS=${CFLAGS:-}
 CXXFLAGS=${CXXFLAGS:-"$CFLAGS"}
 CPPFLAGS=${CPPFLAGS:-}
 
@@ -396,7 +396,84 @@ GALERA_REV="a3edd"
 GALERA_REV=${GALERA_REV//[[:space:]]/}
 popd
 
+<<<<<<< HEAD
 if [ "$SCONS" == "yes" ] # Build using Scons
+||||||| c333b191
+if [ -z "$RELEASE" ]
+then
+    source GALERA_VERSION
+    RELEASE="$GALERA_VERSION_WSREP_API.$GALERA_VERSION_MAJOR.$GALERA_VERSION_MINOR"
+fi
+
+if [ "$CMAKE" == "yes" ] # Build using CMake
+then
+    cmake_args="$CMAKE_OPTS -DGALERA_REVISION=$GALERA_REV"
+    [ -n "$TARGET"        ] && \
+        echo "WARN: TARGET=$TARGET ignored by CMake build"
+    [ -n "$RELEASE"       ] && \
+        echo "WARN: RELEASE=$RELEASE ignored by CMake build"
+    [ "$DEBUG" == "yes"   ] && \
+        cmake_args="$cmake_args -DCMAKE_BUILD_TYPE=Debug" || \
+        cmake_args="$cmake_args -DCMAKE_BUILD_TYPE=RelWithDebInfo"
+    [ -n "$EXTRA_SYSROOT" ] && \
+        echo "EXTRA_SYSROOT=$EXTRA_SYSROOT ignored by CMake build"
+
+    if [ "$SCRATCH" == "yes" ]
+    then
+        (cd $build_base && make clean) || :
+        rm -f $build_base/CMakeCache.txt
+        cmake $cmake_args $build_base
+    fi
+
+    if [ "$SKIP_BUILD" != "yes" ]
+    then
+        make -j $JOBS VERBOSE=1
+    fi
+
+    if [ $RUN_TESTS ]
+    then
+        make test ARGS=-V
+    fi
+elif [ "$SCONS" == "yes" ] # Build using Scons
+=======
+if [ -z "$RELEASE" ]
+then
+    source GALERA_VERSION
+    RELEASE="$GALERA_VERSION_WSREP_API.$GALERA_VERSION_MAJOR.$GALERA_VERSION_MINOR"
+fi
+
+if [ "$CMAKE" == "yes" ] # Build using CMake
+then
+    cmake_args="$CMAKE_OPTS -DGALERA_REVISION=$GALERA_REV"
+    cmake_args="$cmake_args -DCMAKE_C_FLAGS="\'"$CFLAGS"\'" -DCMAKE_CXX_FLAGS="\'"$CXXFLAGS"\'
+    [ -n "$TARGET"        ] && \
+        echo "WARN: TARGET=$TARGET ignored by CMake build"
+    [ -n "$RELEASE"       ] && \
+        echo "WARN: RELEASE=$RELEASE ignored by CMake build"
+    [ "$DEBUG" == "yes"   ] && \
+        cmake_args="$cmake_args -DCMAKE_BUILD_TYPE=Debug" || \
+        cmake_args="$cmake_args -DCMAKE_BUILD_TYPE=RelWithDebInfo"
+    [ -n "$EXTRA_SYSROOT" ] && \
+        echo "EXTRA_SYSROOT=$EXTRA_SYSROOT ignored by CMake build"
+
+    if [ "$SCRATCH" == "yes" ]
+    then
+        (cd $build_base && make clean) || :
+        rm -f $build_base/CMakeCache.txt
+        eval cmake $cmake_args $build_base
+    fi
+
+    if [ "$SKIP_BUILD" != "yes" ]
+    then
+        make -j $JOBS VERBOSE=1
+    fi
+
+    if [ $RUN_TESTS ]
+    then
+        make test ARGS=-V
+    fi
+elif [ "$SCONS" == "yes" ] # Build using Scons
+>>>>>>> release_26.4.17
 then
     # Scons variant dir, defaults to GALERA_SRC
     export SCONS_VD=$build_base

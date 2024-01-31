@@ -1,4 +1,4 @@
-/* Copyright (C) 2013-2020 Codership Oy <info@codership.com>
+/* Copyright (C) 2013-2023 Codership Oy <info@codership.com>
  *
  * $Id$
  */

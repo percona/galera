@@ -1162,7 +1162,8 @@ namespace gcache
                                                        sizeof(cs_old)));
                         std::ostringstream msg;
 
-                        msg << "Attempt to reuse the same seqno: " << seqno_g
+                        msg << "Attempt (" << collision_count
+                            << ") to reuse the same seqno: " << seqno_g
                             << ". New ptr = " << new_ptr << ", " << bh
                             << ", cs: " << gu::Hexdump(cs_new, sizeof(cs_new))
                             << ", previous ptr = " << old_ptr;
@@ -1603,8 +1604,16 @@ namespace gcache
         size_t chain_count[] = { 0, 0, 0, 0 };
 
         chain_t chain(NONE);
+<<<<<<< HEAD
         const uint8_t* chain_start = nullptr;
         size_t count = 0;
+||||||| c333b191
+        const uint8_t* chain_start;
+        size_t count;
+=======
+        const uint8_t* chain_start(start_);
+        size_t count;
+>>>>>>> release_26.4.17
 
         bool next(false);
         const uint8_t* ptr(start_);

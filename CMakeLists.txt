@@ -75,6 +75,7 @@ endif()
 # Source compiler/OS settings first as it sets used C/C++ standards,
 # common compiler flags and include/link paths.
 include(cmake/compiler.cmake)
+include(cmake/alignment.cmake)
 include(cmake/os.cmake)
 # Instrumentation.
 include(cmake/asan.cmake)
@@ -86,6 +87,7 @@ include(cmake/common.cmake)
 include(cmake/ssl.cmake)
 include(cmake/asio.cmake)
 include(cmake/array.cmake)
+include(cmake/custom_boost.cmake)
 include(cmake/boost.cmake)
 include(cmake/crc32c.cmake)
 include(cmake/endian.cmake)
