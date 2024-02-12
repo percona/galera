@@ -37,7 +37,7 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 #
 
 # Common C/CXX flags
-set(CMAKE_COMMON_FLAGS "-Wall -Wextra -g -Wno-vla")
+set(CMAKE_COMMON_FLAGS "-Wall -Wextra -g")
 
 if (CMAKE_BUILD_TYPE STREQUAL "Debug")
   set(CMAKE_COMMON_FLAGS "${CMAKE_COMMON_FLAGS} -O0")
