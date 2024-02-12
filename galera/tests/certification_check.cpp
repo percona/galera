@@ -245,14 +245,8 @@ START_TEST(test_certification_trx_v3)
         // 10: depends on 6
         { { {2, } }, 1, 10,
           { {void_cast("1"), 1}, {void_cast("1"), 1}, {void_cast("1"), 1} }, 3, true,
-<<<<<<< HEAD
           10, 10, 6, 6, TrxHandle::F_BEGIN | TrxHandle::F_COMMIT,
-||||||| c333b191
-          10, 10, 6, 5, TrxHandle::F_BEGIN | TrxHandle::F_COMMIT,
-=======
-          10, 10, 6, 5, TrxHandle::F_BEGIN | TrxHandle::F_COMMIT,
           galera::KeyData::BRANCH_KEY_TYPE,
->>>>>>> release_26.4.17
           Certification::TEST_OK, {0}, 0},
         // 11 - 13: exclusive - shared - exclusive dependency
         { { {2, } }, 1, 11,

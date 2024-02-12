@@ -2612,15 +2612,9 @@ void gcomm::evs::Proto::handle_up(const void* cid, const Datagram& rb,
             break;
 
         default:
-<<<<<<< HEAD
-            log_fatal << "exception caused by message: " << msg;
+            log_fatal << "exception caused by message: " << *msg.first;
             log_fatal << "errno: " << e.get_errno();
             log_fatal << "what: " << e.what();
-||||||| c333b191
-            log_fatal << "exception caused by message: " << msg;
-=======
-            log_fatal << "exception caused by message: " << *msg.first;
->>>>>>> release_26.4.17
             std::cerr << " state after handling message: " << *this;
             throw;
         }

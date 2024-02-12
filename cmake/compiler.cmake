@@ -36,26 +36,8 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 # see maintainer_mode.cmake.
 #
 
-<<<<<<< HEAD
-# C flags
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wextra -g -Wno-vla")
-if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
-  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -D_XOPEN_SOURCE=600")
-endif()
-# CXX flags
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra -Woverloaded-virtual -g")
-||||||| c333b191
-# C flags
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wextra -g")
-if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
-  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -D_XOPEN_SOURCE=600")
-endif()
-# CXX flags
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra -Woverloaded-virtual -g")
-=======
 # Common C/CXX flags
-set(CMAKE_COMMON_FLAGS "-Wall -Wextra -g")
->>>>>>> release_26.4.17
+set(CMAKE_COMMON_FLAGS "-Wall -Wextra -g -Wno-vla")
 
 if (CMAKE_BUILD_TYPE STREQUAL "Debug")
   set(CMAKE_COMMON_FLAGS "${CMAKE_COMMON_FLAGS} -O0")

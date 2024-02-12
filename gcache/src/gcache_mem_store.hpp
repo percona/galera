@@ -117,17 +117,6 @@ namespace gcache
 
             if (tmp)
             {
-<<<<<<< HEAD
-#pragma GCC diagnostic push
-#if __GNUC__ > 12 || (__GNUC__ == 12 && __GNUC_MINOR__ >= 1)
-#pragma GCC diagnostic ignored "-Wuse-after-free"
-#endif
-                allocd_.erase(bh);
-#pragma GCC diagnostic pop
-||||||| c333b191
-                allocd_.erase(bh);
-=======
->>>>>>> release_26.4.17
                 allocd_.insert(tmp);
 
                 bh = BH_cast(tmp);
