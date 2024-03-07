@@ -1,5 +1,5 @@
 //
-// Copyright (C) 2018-2020 Codership Oy <info@codership.com>
+// Copyright (C) 2018-2023 Codership Oy <info@codership.com>
 //
 
 #include <wsrep_api.h>
@@ -114,7 +114,7 @@ static const char* Defaults[] =
     "repl.commit_order",           "3",
     "repl.key_format",             "FLAT8",
     "repl.max_ws_size",            "2147483647",
-    "repl.proto_max",              "10",
+    "repl.proto_max",              "11",
 #ifdef GU_DBUG_ON
     "signal",                      "",
 #endif
@@ -324,7 +324,6 @@ START_TEST(defaults)
                       ret, strerror(ret));
     }
 
-    provider.free(&provider);
     mark_point();
 
     /* cleanup files */

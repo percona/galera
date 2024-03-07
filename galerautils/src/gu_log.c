@@ -16,6 +16,8 @@
 #include "gu_log.h"
 #include "gu_macros.h"
 
+#define GU_LOG_BUF_SIZE 2048
+
 /* Global configurable variables */
 static FILE*      gu_log_file        = NULL;
 bool              gu_log_self_tstamp = false;
@@ -137,9 +139,9 @@ gu_log (gu_log_severity_t severity,
         ...)
 {
     va_list ap;
-    int   max_string = 2048;
-    char  string[max_string]; /** @note: this can cause stack overflow
-                               * in kernel mode (both Linux and Windows). */
+    int   max_string = GU_LOG_BUF_SIZE;
+    char  string[GU_LOG_BUF_SIZE]; /** @note: this can cause stack overflow
+                                   * in kernel mode (both Linux and Windows). */
     char* str = string;
     int   len;
 

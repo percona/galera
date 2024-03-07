@@ -92,16 +92,19 @@ namespace gcache
 
         void* realloc (void* ptr, size_type size)
         {
-            BufferHeader* bh(0);
-            size_type old_size(0);
+            if (!ptr) return malloc(size);
 
-            if (ptr)
+            BufferHeader* bh(ptr2BH(ptr));
+            assert (SEQNO_NONE == bh->seqno_g);
+
+            if (!size)
             {
-                bh = ptr2BH(ptr);
-                assert (SEQNO_NONE == bh->seqno_g);
-                old_size = bh->size;
+                free(bh);
+                return nullptr;
             }
 
+            uintptr_t const orig(reinterpret_cast<uintptr_t>(bh));
+            size_type const old_size(bh->size);
             diff_type const diff_size(size - old_size);
 
             if (size > max_size_ ||
@@ -109,16 +112,11 @@ namespace gcache
 
             assert (size_ + diff_size <= max_size_);
 
+            allocd_.erase(bh);
             void* tmp = ::realloc (bh, size);
 
             if (tmp)
             {
-#pragma GCC diagnostic push
-#if __GNUC__ > 12 || (__GNUC__ == 12 && __GNUC_MINOR__ >= 1)
-#pragma GCC diagnostic ignored "-Wuse-after-free"
-#endif
-                allocd_.erase(bh);
-#pragma GCC diagnostic pop
                 allocd_.insert(tmp);
 
                 bh = BH_cast(tmp);
@@ -128,6 +126,13 @@ namespace gcache
                 size_ += diff_size;
 
                 return (bh + 1);
+            }
+            else
+            {
+                assert(size > 0);
+                /* orginal buffer is still allocated so we need to restore it
+                 * but we can't use bh directly due to GCC warnings */
+                allocd_.insert(reinterpret_cast<BufferHeader*>(orig));
             }
 
             return 0;
