@@ -747,7 +747,8 @@ wsrep_status_t galera::ReplicatorSMM::replicate(TrxHandleMaster& trx,
     assert(trx.state() == TrxHandle::S_EXECUTING ||
            trx.state() == TrxHandle::S_MUST_ABORT);
 
-    if (trx.version() >= 6)
+    // Disable Zero level keys for TOI and NBO transactions.
+    if (trx.version() >= 6 && !(trx.flags() & TrxHandle::F_ISOLATION))
     {
         /* By default append zero-level key */
         galera::KeyData const k(trx.version());
