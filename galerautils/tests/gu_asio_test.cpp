@@ -961,7 +961,7 @@ static void throw_error(const char* msg)
 
 static EVP_PKEY* create_key()
 {
-#if OPENSSL_VERSION_MAJOR < 3
+#if OPENSSL_VERSION_NUMBER < 0x30000000L
     auto* bn = BN_new();
     if (!bn)
     {
@@ -993,7 +993,7 @@ static EVP_PKEY* create_key()
         throw_error("could not create RSA");
     }
     return ret;
-#endif /* OPENSSL_VERSION_MAJOR < 3 */
+#endif /* OPENSSL_VERSION_NUMBER < 0x30000000L */
 }
 
 static FILE* open_file(const std::string& path, const char* mode)
@@ -1024,6 +1024,7 @@ static void write_key(EVP_PKEY* pkey, const std::string& filename)
 static void set_x509v3_extensions(X509* x509, X509* issuer)
 {
     auto* conf_bio = BIO_new(BIO_s_mem());
+    char extn[] = "extensions";
     std::string ext{ "[extensions]\n"
                      "authorityKeyIdentifier=keyid,issuer\n"
                      "subjectKeyIdentifier=hash\n" };
@@ -1052,7 +1053,7 @@ static void set_x509v3_extensions(X509* x509, X509* issuer)
     X509V3_CTX ctx;
     X509V3_set_ctx(&ctx, issuer ? issuer : x509, x509, nullptr, nullptr, 0);
     X509V3_set_nconf(&ctx, conf);
-    if (!X509V3_EXT_add_nconf(conf, &ctx, "extensions", x509))
+    if (!X509V3_EXT_add_nconf(conf, &ctx, extn, x509))
     {
         throw_error("Could not add extension");
     }
