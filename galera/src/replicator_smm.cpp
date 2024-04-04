@@ -781,10 +781,6 @@ wsrep_status_t galera::ReplicatorSMM::replicate(TrxHandleMaster& trx,
     act.seqno_g = GCS_SEQNO_ILL;
 #endif
 
-#ifdef PXC
-    GU_DBUG_SYNC_WAIT("before_replicate_sync")
-#endif /* PXC */
-
     act.buf  = NULL;
     act.size = trx.gather(actv);
     TX_SET_STATE(trx, TrxHandle::S_REPLICATING);
