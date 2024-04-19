@@ -1551,7 +1551,7 @@ _close(gcs_conn_t* conn, bool join_recv_thread)
             assert (GCS_CONN_CLOSED == conn->state);
         }
 
-        gu_info ("Closing replication queue.");
+        gu_info ("Closing send queue.");
         struct gcs_repl_act** act_ptr;
         /* At this point (state == CLOSED) no new threads should be able to
          * queue for repl (check gcs_repl()), and recv thread is joined, so no
@@ -1574,6 +1574,7 @@ _close(gcs_conn_t* conn, bool join_recv_thread)
         /* wake all gcs_recv() threads () */
         // FIXME: this can block waiting for applicaiton threads to fetch all
         // items. In certain situations this can block forever. Ticket #113
+<<<<<<< HEAD
         gu_info ("Closing slave action queue.");
 
 #ifdef GCS_FOR_GARB
@@ -1597,6 +1598,11 @@ _close(gcs_conn_t* conn, bool join_recv_thread)
             }
         }
 #endif /* GCS_FOR_GARB */
+||||||| b6cd015f
+        gu_info ("Closing slave action queue.");
+=======
+        gu_info ("Closing receive queue.");
+>>>>>>> tag/release_26.4.18
         gu_fifo_close (conn->recv_q);
     }
 
@@ -2449,6 +2455,7 @@ gcs_set_last_applied (gcs_conn_t* conn, const gu::GTID& gtid)
     }
     else
     {
+        log_debug << "Sending last applied seqno: " << gtid.seqno();
         ret = gcs_core_set_last_applied(conn->core, gtid);
         gcs_sm_leave(conn->sm);
         if (ret < 0)
