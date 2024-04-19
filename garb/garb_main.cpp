@@ -10,7 +10,6 @@
 #include <stdlib.h> // exit()
 #include <unistd.h> // setsid(), chdir()
 #include <fcntl.h>  // open()
-<<<<<<< HEAD
 #include <thread>
 #include <chrono>
 
@@ -113,10 +112,7 @@ extern "C" {
   }
 }
 #endif
-||||||| b6cd015f
-=======
-#include <signal.h> // sigaction
->>>>>>> tag/release_26.4.18
+
 
 namespace garb
 {

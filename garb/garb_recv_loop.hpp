@@ -27,15 +27,9 @@ public:
 
 private:
 
-<<<<<<< HEAD
-    int loop();
-||||||| b6cd015f
-    void loop();
-=======
     bool one_loop();
     void loop();
     void close_connection();
->>>>>>> tag/release_26.4.18
 
     const Config& config_;
     gu::Config    gconf_;
@@ -69,12 +63,8 @@ private:
     gu::UUID    uuid_;
     gu::seqno_t seqno_;
     int         proto_;
-<<<<<<< HEAD
     int         rcode_;
-||||||| b6cd015f
-=======
     bool        closed_;
->>>>>>> tag/release_26.4.18
 
 }; /* RecvLoop */
 

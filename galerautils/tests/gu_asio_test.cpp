@@ -1055,13 +1055,7 @@ static void set_x509v3_extensions(X509* x509, X509* issuer)
     X509V3_CTX ctx;
     X509V3_set_ctx(&ctx, issuer ? issuer : x509, x509, nullptr, nullptr, 0);
     X509V3_set_nconf(&ctx, conf);
-<<<<<<< HEAD
     if (!X509V3_EXT_add_nconf(conf, &ctx, extn, x509))
-||||||| b6cd015f
-    if (!X509V3_EXT_add_nconf(conf, &ctx, "extensions", x509))
-=======
-    if (!X509V3_EXT_add_nconf(conf, &ctx, (char *)"extensions", x509))
->>>>>>> tag/release_26.4.18
     {
         throw_error("Could not add extension");
     }

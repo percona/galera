@@ -1574,8 +1574,7 @@ _close(gcs_conn_t* conn, bool join_recv_thread)
         /* wake all gcs_recv() threads () */
         // FIXME: this can block waiting for applicaiton threads to fetch all
         // items. In certain situations this can block forever. Ticket #113
-<<<<<<< HEAD
-        gu_info ("Closing slave action queue.");
+        gu_info ("Closing receive queue.");
 
 #ifdef GCS_FOR_GARB
         // We are at a state where both the gcomm thread and the receiver
@@ -1598,11 +1597,6 @@ _close(gcs_conn_t* conn, bool join_recv_thread)
             }
         }
 #endif /* GCS_FOR_GARB */
-||||||| b6cd015f
-        gu_info ("Closing slave action queue.");
-=======
-        gu_info ("Closing receive queue.");
->>>>>>> tag/release_26.4.18
         gu_fifo_close (conn->recv_q);
     }
 
