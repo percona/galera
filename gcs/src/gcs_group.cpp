@@ -846,7 +846,15 @@ gcs_group_handle_last_msg (gcs_group_t* group, const gcs_recv_msg_t* msg)
               << "). Last node: " << group->last_node << " ("
               << group->nodes[group->last_node].name << ")";
 
-    if (msg->sender_idx == group->last_node   &&
+    /* KH: we need to calculate group->last_node. If this node started with grastate.dat
+       , its group->last_applied is set to its seqno. But last_node remains -1
+       Before upstream commit ddbcc291, last_applied was reset to 0 and group_redo_last_applied()
+       had a chance to set last_node, as current node's seqno is zero as well (not set yet) (condition inside
+       group_redo_last_applied() (seqno >= group->last_applied) )
+       The below condition said that we need last_node to be able to do commit cut,
+       but during normal operation group_redo_last_applied() will never be called in such
+       a case, so group->last_node will always be -1 and we have a vicious circle. */
+    if ((msg->sender_idx == group->last_node || group->last_node == -1)   &&
         gtid.seqno()    >  group->last_applied) {
         /* node that was responsible for the last value, has changed it.
          * need to recompute it */
