@@ -227,8 +227,9 @@ RecvLoop::one_loop()
         if (config_.sst() != Config::DEFAULT_SST)
         {
             // we requested custom SST, so we're done here
-            if(config_.recv_script().empty()) {
+            if(config_.recv_script().empty() && !closed_) {
                 gcs_.close(true);
+                closed_ = true;
             }
         }
 
@@ -271,6 +272,12 @@ RecvLoop::loop()
             log_error << e.what();
             close_connection();
             rcode_ = 1;
+            switch (e.get_errno())
+            {
+                case -GCS_CLOSED_ERROR:
+                case EHOSTUNREACH: /* no route to host */
+                    throw;
+            }
             /* continue looping to clear recv queue */
         }
     }
