@@ -1378,6 +1378,28 @@ _handle_vote (gcs_conn_t& conn, const struct gcs_act& act)
 }
 
 /*!
+* Handle GCS_ACT_COMMIT_CUT locally. We decided to skip providing it to the
+* application because we wait for vote result, but need to free action buffer.
+*/
+static int
+handle_commit_cut (gcs_conn_t& conn, struct gcs_act& act)
+{
+    assert(act.type == GCS_ACT_COMMIT_CUT);
+    assert(act.buf);
+
+    if (conn.vote_wait_ && act.buf) {
+        ::free(const_cast<void*>(act.buf));
+        act.buf = nullptr;
+        act.buf_len = 0;
+        return 0;
+    }
+
+    /* We should never get here because of the caller condition. */
+    assert(0);
+    return 1;
+}
+
+/*!
  * Performs work requred by action in current context.
  * @return negative error code, 0 if action should be discarded, 1 if should be
  *         passed to application.
@@ -1422,6 +1444,8 @@ gcs_handle_actions (gcs_conn_t* conn, struct gcs_act_rcvd& rcvd)
     case GCS_ACT_VOTE:
         ret = _handle_vote (*conn, rcvd.act);
         break;
+    case GCS_ACT_COMMIT_CUT:
+        ret = handle_commit_cut(*conn, rcvd.act);
     default:
         break;
     }
@@ -1653,6 +1677,9 @@ static void *gcs_recv_thread (void *arg)
                 /* In the case of inconsistency our concern is to report it to
                  * replicator ASAP. Current contents of the slave queue are
                  * meaningless. */
+
+                /* KH: We are going to shutdown anyway, but for sanity,
+                 * shouldn't we deallocate queue items buffers? */
                 gu_fifo_clear(conn->recv_q);
             }
 
