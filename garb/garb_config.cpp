@@ -49,6 +49,7 @@ Config::Config (int argc, char* argv[])
 #if defined(WITH_COREDUMPER) && WITH_COREDUMPER
       coredumper_ (),
 #endif
+      debug_   (false),
       exit_    (false)
 {
     po::options_description other ("Other options");
@@ -72,8 +73,8 @@ Config::Config (int argc, char* argv[])
         ("options,o",   po::value<std::string>(&options_),     "GCS/GCOMM option list")
         ("log,l",       po::value<std::string>(&log_),         "Log file")
         ("recv-script", po::value<std::string>(&recv_script_), "SST request receive script")
-        ("workdir,w",po::value<std::string>(&workdir_),
-         "Daemon working directory")
+        ("workdir,w",   po::value<std::string>(&workdir_),     "Daemon working directory")
+        ("debug",       po::value<bool>(&debug_),              "Enable debug prints")
         ;
 
     po::options_description cfg_opt;
@@ -126,6 +127,12 @@ Config::Config (int argc, char* argv[])
 
         store(parse_config_file(ifs, config), vm);
         notify(vm);
+    }
+
+    if (vm.count("debug"))
+    {
+        if (debug_)
+          gu_conf_debug_on();
     }
 
     if (!vm.count("address"))
@@ -207,7 +214,8 @@ std::ostream& operator << (std::ostream& os, const Config& c)
        << "\n\tcfg:         " << c.cfg()
        << "\n\tlog:         " << c.log()
        << "\n\trecv_script: " << c.recv_script()
-       << "\n\tworkdir: " << c.workdir();
+       << "\n\tworkdir:     " << c.workdir()
+       << "\n\tdebug:       " << c.debug();;
     return os;
 }
 
