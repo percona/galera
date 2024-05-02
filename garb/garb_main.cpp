@@ -10,13 +10,10 @@
 #include <stdlib.h> // exit()
 #include <unistd.h> // setsid(), chdir()
 #include <fcntl.h>  // open()
-#include <thread>
-#include <chrono>
+#include <signal.h>
 
 #if defined(WITH_COREDUMPER) && WITH_COREDUMPER
 #include "coredumper/coredumper.h"
-
-#include <signal.h>
 
 /**
    Copies strlen(src) characters of source to destination.
