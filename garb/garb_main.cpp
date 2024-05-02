@@ -1,4 +1,4 @@
-/* Copyright (C) 2011 Codership Oy <info@codership.com> */
+/* Copyright (C) 2011-2024 Codership Oy <info@codership.com> */
 
 #include "garb_config.hpp"
 #include "garb_recv_loop.hpp"
@@ -10,13 +10,10 @@
 #include <stdlib.h> // exit()
 #include <unistd.h> // setsid(), chdir()
 #include <fcntl.h>  // open()
-#include <thread>
-#include <chrono>
+#include <signal.h>
 
 #if defined(WITH_COREDUMPER) && WITH_COREDUMPER
 #include "coredumper/coredumper.h"
-
-#include <signal.h>
 
 /**
    Copies strlen(src) characters of source to destination.
@@ -113,6 +110,7 @@ extern "C" {
 }
 #endif
 
+
 namespace garb
 {
 
@@ -207,6 +205,18 @@ main (int argc, char* argv[])
 
     try
     {
+        /* Ignore SIGPIPE which could be raised when cluster connections are
+           closed abruptly. */
+        struct sigaction isa;
+        memset (&isa, 0, sizeof(isa));
+        isa.sa_handler = SIG_IGN;
+
+        if (sigaction (SIGPIPE, &isa, NULL))
+        {
+            gu_throw_error(errno) << "Falied to install signal handler for signal "
+                                  << "SIGPIPE";
+        }
+
         RecvLoop loop (config);
         return loop.returnCode();
     }

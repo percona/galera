@@ -1,4 +1,4 @@
-/* Copyright (C) 2011-2016 Codership Oy <info@codership.com> */
+/* Copyright (C) 2011-2023 Codership Oy <info@codership.com> */
 
 #ifndef _GARB_RECV_LOOP_HPP_
 #define _GARB_RECV_LOOP_HPP_
@@ -10,7 +10,13 @@
 #include <gu_asio.hpp>
 #include <common.h> // COMMON_BASE_DIR_KEY
 
+#include <memory>
+#include <thread>
+#include <atomic>
+
 #include <pthread.h>
+
+class process;
 
 namespace garb
 {
@@ -27,7 +33,9 @@ public:
 
 private:
 
-    int loop();
+    bool one_loop();
+    void loop();
+    void close_connection();
 
     const Config& config_;
     gu::Config    gconf_;
@@ -62,6 +70,20 @@ private:
     gu::seqno_t seqno_;
     int         proto_;
     int         rcode_;
+    bool        closed_;
+
+    gu_uuid_t sst_source_uuid_;
+    bool sst_requested_;
+    std::atomic_bool sst_status_keep_running_;
+    bool sst_ended_;
+    bool sst_terminated_;
+
+    std::shared_ptr<process> process_;
+    std::thread sst_out_log_;
+    std::thread sst_err_log_;
+    std::thread sst_status_thread_;
+
+
 
 }; /* RecvLoop */
 

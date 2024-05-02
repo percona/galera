@@ -1,10 +1,8 @@
-/* Copyright (C) 2011-2020 Codership Oy <info@codership.com> */
+/* Copyright (C) 2011-2023 Codership Oy <info@codership.com> */
 
 #include "garb_recv_loop.hpp"
 
 #include <signal.h>
-#include <thread> 
-#include <atomic> 
 #include "process.h"
 #include "garb_raii.h" // Garb_gcs_action_buffer_guard
 
@@ -21,6 +19,15 @@ signal_handler (int signum)
     global_gcs->close();
 }
 
+void
+RecvLoop::close_connection()
+{
+    if (!closed_)
+    {
+        gcs_.close();
+        closed_ = true;
+    }
+}
 
 RecvLoop::RecvLoop (const Config& config)
     :
@@ -32,7 +39,13 @@ RecvLoop::RecvLoop (const Config& config)
     uuid_  (GU_UUID_NIL),
     seqno_ (GCS_SEQNO_ILL),
     proto_ (0),
-    rcode_ (0)
+    rcode_ (0),
+    closed_(false),
+    sst_source_uuid_(),
+    sst_requested_(false),
+    sst_status_keep_running_(true),
+    sst_ended_(false),
+    sst_terminated_(false)
 {
     /* set up signal handlers */
     global_gcs = &gcs_;
@@ -57,7 +70,8 @@ RecvLoop::RecvLoop (const Config& config)
                               << "SIGINT";
     }
 
-    rcode_ = loop();
+    process_ = std::make_shared<process>(config_.recv_script().c_str(), "rw", nullptr, false);
+    loop();
 }
 
 void pipe_to_log(FILE* pipe) {
@@ -69,178 +83,204 @@ void pipe_to_log(FILE* pipe) {
     }
 }
 
-int
+/* return true to exit loop */
+bool
+RecvLoop::one_loop()
+{
+    gcs_action act;
+
+    gcs_.recv (act);
+
+    Garb_gcs_action_buffer_guard ag{&act};
+
+    switch (act.type)
+    {
+    case GCS_ACT_WRITESET:
+        seqno_ = act.seqno_g;
+        if (gu_unlikely(proto_ == 0 && !(seqno_ & 127)))
+            /* report_interval_ of 128 in old protocol */
+        {
+            gcs_.set_last_applied (gu::GTID(uuid_, seqno_));
+        }
+        break;
+    case GCS_ACT_COMMIT_CUT:
+        break;
+    case GCS_ACT_STATE_REQ:
+        /* we can't donate state */
+        gcs_.join (gu::GTID(uuid_, seqno_),-ENOSYS);
+        break;
+    case GCS_ACT_CCHANGE:
+    {
+        gcs_act_cchange const cc(act.buf, act.size);
+
+        if (cc.conf_id > 0) /* PC */
+        {
+            int const my_idx(act.seqno_g);
+            assert(my_idx >= 0);
+
+            gcs_node_state const my_state(cc.memb[my_idx].state_);
+
+            if (GCS_NODE_STATE_PRIM == my_state && !sst_requested_)
+            {
+                uuid_  = cc.uuid;
+                seqno_ = cc.seqno;
+                sst_requested_ = true;
+                auto sst_source_idx =  gcs_.request_state_transfer (config_.sst(),config_.donor());
+                sst_source_uuid_ = cc.memb[sst_source_idx].uuid_;
+                if(config_.recv_script().empty()) {
+                    gcs_.join(gu::GTID(cc.uuid, cc.seqno), 0);
+                } else {
+                    log_info << "Starting SST script";
+                    process_->execute("rw", NULL);
+
+                     std::thread err_log_thd([&](){
+                        pipe_to_log(process_->err_pipe());
+                        log_info << "SST script ended";
+                        sst_ended_ = true;
+                        gcs_.close(true);
+                    });
+                    sst_err_log_.swap(err_log_thd);
+
+                    std::thread out_log_thd([&](){
+                        pipe_to_log(process_->pipe());
+                    });
+                    sst_out_log_.swap(out_log_thd);
+
+                    std::thread sst_status_thd([&](){
+                        while(sst_status_keep_running_) {
+
+                            auto st = gcs_.state_for(sst_source_uuid_);
+                            if(st == GCS_NODE_STATE_MAX) {
+                                log_info << "Donor is no longer in the cluster, interrupting script";
+                                sst_terminated_ = true;
+                                process_->terminate();
+                                break;
+                            } else if(st != GCS_NODE_STATE_DONOR) {
+                                // The donor is going back to SYNCED. If SST streaming didn't start yet,
+                                // it won't.
+                                // Send SIGTERM to the script and let it handle this situation.
+                                log_info << "Donor no longer in donor state, interrupting script";
+                                sst_terminated_ = true;
+                                process_->terminate();
+                                break;
+                            }
+                            std::this_thread::sleep_for(std::chrono::seconds(1));
+                        }
+                    });
+                    sst_status_thread_.swap(sst_status_thd);
+                }
+            }
+
+            proto_ = gcs_.proto_ver();
+        }
+        else
+        {
+            if (cc.memb.size() == 0) // SELF-LEAVE after closing connection
+            {
+                if(!config_.recv_script().empty()) {
+                    if (sst_terminated_) {
+                        log_info << "SST script already terminated";
+                        rcode_ = process_->wait();
+                        sst_err_log_.join();
+                        sst_out_log_.join();
+                        sst_status_keep_running_ = false;
+                        sst_status_thread_.join();
+                        log_info << "Exiting main loop";
+                        return true;
+                    } else if(sst_ended_) {
+                        // Good path: we decided to close the connection after the receiver script closed its
+                        // standard output. We wait for it to exit and return its error code.
+                        log_info << "Waiting for SST script to stop";
+                        rcode_ = process_->wait();
+                        log_info << "SST script stopped";
+                        sst_err_log_.join();
+                        sst_out_log_.join();
+                        sst_status_keep_running_ = false;
+                        sst_status_thread_.join();
+                        log_info << "Exiting main loop";
+                        return true;
+                    } else {
+                        // Error path: we are closing the connection because there is an SST error,
+                        // such as a non existent donor side SST script was specified
+                        // As the receiver side script is already running, and is most likely waiting for a TCP
+                        // connection, we terminate it and report an error.
+                        log_info << "Terminating SST script";
+                        process_->terminate();
+                        sst_err_log_.join();
+                        sst_out_log_.join();
+                        sst_status_keep_running_ = false;
+                        sst_status_thread_.join();
+                        log_info << "Exiting main loop";
+                        rcode_ = 1;
+                        return true;
+                    }
+                } else {
+                        log_info << "Exiting main loop";
+                        rcode_ = 0;
+                        return true;
+                }
+            }
+            uuid_  = GU_UUID_NIL;
+            seqno_ = GCS_SEQNO_ILL;
+        }
+
+        if (config_.sst() != Config::DEFAULT_SST)
+        {
+            // we requested custom SST, so we're done here
+            if(config_.recv_script().empty() && !closed_) {
+                gcs_.close(true);
+                closed_ = true;
+            }
+        }
+
+        break;
+    }
+    case GCS_ACT_INCONSISTENCY:
+        // something went terribly wrong, restart needed
+        close_connection();
+        break;
+    case GCS_ACT_JOIN:
+    case GCS_ACT_SYNC:
+    case GCS_ACT_FLOW:
+    case GCS_ACT_VOTE:
+    case GCS_ACT_SERVICE:
+    case GCS_ACT_ERROR:
+    case GCS_ACT_UNKNOWN:
+        break;
+    }
+
+    if (act.buf)
+    {
+        ::free(const_cast<void*>(act.buf));
+        act.buf = nullptr;
+    }
+
+    return false;
+}
+
+void
 RecvLoop::loop()
 {
-    process p(config_.recv_script().c_str(), "rw", NULL, false);
-    std::thread sst_out_log;
-    std::thread sst_err_log;
-
-    gu_uuid_t sst_source_uuid;
-    bool sst_requested = false;
-    std::atomic_bool sst_status_keep_running{true};
-    std::thread sst_status_thread;
-
-    bool sst_ended = false;
-    bool sst_terminated = false;
-    while (1)
+    while (true)
     {
-        gcs_action act;
-
-        gcs_.recv (act);
-        Garb_gcs_action_buffer_guard ag{&act};
-
-        switch (act.type)
+        try
         {
-        case GCS_ACT_WRITESET:
-            seqno_ = act.seqno_g;
-            if (gu_unlikely(proto_ == 0 && !(seqno_ & 127)))
-                /* report_interval_ of 128 in old protocol */
-            {
-                gcs_.set_last_applied (gu::GTID(uuid_, seqno_));
-            }
-            break;
-        case GCS_ACT_COMMIT_CUT:
-            break;
-        case GCS_ACT_STATE_REQ:
-            /* we can't donate state */
-            gcs_.join (gu::GTID(uuid_, seqno_),-ENOSYS);
-            break;
-        case GCS_ACT_CCHANGE:
-        {
-            gcs_act_cchange const cc(act.buf, act.size);
-
-            if (cc.conf_id > 0) /* PC */
-            {
-                int const my_idx(act.seqno_g);
-                assert(my_idx >= 0);
-
-                gcs_node_state const my_state(cc.memb[my_idx].state_);
-
-                if (GCS_NODE_STATE_PRIM == my_state && !sst_requested)
-                {
-                    uuid_  = cc.uuid;
-                    seqno_ = cc.seqno;
-                    sst_requested = true;
-                    auto sst_source_idx =  gcs_.request_state_transfer (config_.sst(),config_.donor());
-                    sst_source_uuid = cc.memb[sst_source_idx].uuid_;
-                    if(config_.recv_script().empty()) {
-                        gcs_.join(gu::GTID(cc.uuid, cc.seqno), 0);
-                    } else {
-                        log_info << "Starting SST script";
-                        p.execute("rw", NULL);
-
-                        sst_err_log = std::thread([&](){
-                            pipe_to_log(p.err_pipe());
-                            log_info << "SST script ended";
-                            sst_ended = true;
-                            gcs_.close(true);
-                        });
-
-                        sst_out_log = std::thread([&](){
-                            pipe_to_log(p.pipe());
-                        });
-
-                        sst_status_thread = std::thread([&](){
-                            while(sst_status_keep_running) {
-
-                              auto st = gcs_.state_for(sst_source_uuid);
-                              if(st == GCS_NODE_STATE_MAX) {
-                                  log_info << "Donor is no longer in the cluster, interrupting script";
-                                  sst_terminated = true;
-                                  p.terminate();
-                                  break;
-                              } else if(st != GCS_NODE_STATE_DONOR) {
-                                  // The donor is going back to SYNCED. If SST streaming didn't start yet,
-                                  // it won't.
-                                  // Send SIGTERM to the script and let it handle this situation.
-                                  log_info << "Donor no longer in donor state, interrupting script";
-                                  sst_terminated = true;
-                                  p.terminate();
-                                  break;
-                              }
-                              std::this_thread::sleep_for(std::chrono::seconds(1));
-                            }
-                        });
-                    }
-                }
-
-                proto_ = gcs_.proto_ver();
-            }
-            else
-            {
-                if (cc.memb.size() == 0) // SELF-LEAVE after closing connection
-                {
-                    if(!config_.recv_script().empty()) {
-                      if (sst_terminated) {
-                            log_info << "SST script already terminated";
-                            const auto ret = p.wait();
-                            sst_err_log.join();
-                            sst_out_log.join();
-                            sst_status_keep_running = false;
-                            sst_status_thread.join();
-                            log_info << "Exiting main loop";
-                            return ret;
-                        } else if(sst_ended) {
-                            // Good path: we decided to close the connection after the receiver script closed its
-                            // standard output. We wait for it to exit and return its error code.
-                            log_info << "Waiting for SST script to stop";
-                            const auto ret = p.wait();
-                            log_info << "SST script stopped";
-                            sst_err_log.join();
-                            sst_out_log.join();
-                            sst_status_keep_running = false;
-                            sst_status_thread.join();
-                            log_info << "Exiting main loop";
-                            return ret;
-                        } else {
-                            // Error path: we are closing the connection because there is an SST error,
-                            // such as a non existent donor side SST script was specified
-                            // As the receiver side script is already running, and is most likely waiting for a TCP
-                            // connection, we terminate it and report an error.
-                            log_info << "Terminating SST script";
-                            p.terminate();
-                            sst_err_log.join();
-                            sst_out_log.join();
-                            sst_status_keep_running = false;
-                            sst_status_thread.join();
-                            log_info << "Exiting main loop";
-                            return 1;
-                        }
-                    } else {
-                            log_info << "Exiting main loop";
-                            return 0;
-                    }
-                }
-                uuid_  = GU_UUID_NIL;
-                seqno_ = GCS_SEQNO_ILL;
-            }
-
-            if (config_.sst() != Config::DEFAULT_SST)
-            {
-                // we requested custom SST, so we're done here
-                if(config_.recv_script().empty()) {
-                    gcs_.close(true);
-                }
-            }
-
-            break;
+            if (one_loop()) return;
         }
-        case GCS_ACT_INCONSISTENCY:
-            // something went terribly wrong, restart needed
-            gcs_.close(true);
-            return 2;
-        case GCS_ACT_JOIN:
-        case GCS_ACT_SYNC:
-        case GCS_ACT_FLOW:
-        case GCS_ACT_VOTE:
-        case GCS_ACT_SERVICE:
-        case GCS_ACT_ERROR:
-        case GCS_ACT_UNKNOWN:
-            break;
+        catch(gu::Exception& e)
+        {
+            log_error << e.what();
+            close_connection();
+            rcode_ = 1;
+            switch (e.get_errno())
+            {
+                case -GCS_CLOSED_ERROR:
+                case EHOSTUNREACH: /* no route to host */
+                    throw;
+            }
+            /* continue looping to clear recv queue */
         }
     }
-    return 0;
 }
 
 } /* namespace garb */

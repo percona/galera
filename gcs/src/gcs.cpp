@@ -1378,6 +1378,28 @@ _handle_vote (gcs_conn_t& conn, const struct gcs_act& act)
 }
 
 /*!
+* Handle GCS_ACT_COMMIT_CUT locally. We decided to skip providing it to the
+* application because we wait for vote result, but need to free action buffer.
+*/
+static int
+handle_commit_cut (gcs_conn_t& conn, struct gcs_act& act)
+{
+    assert(act.type == GCS_ACT_COMMIT_CUT);
+    assert(act.buf);
+
+    if (conn.vote_wait_ && act.buf) {
+        ::free(const_cast<void*>(act.buf));
+        act.buf = nullptr;
+        act.buf_len = 0;
+        return 0;
+    }
+
+    /* We should never get here because of the caller condition. */
+    assert(0);
+    return 1;
+}
+
+/*!
  * Performs work requred by action in current context.
  * @return negative error code, 0 if action should be discarded, 1 if should be
  *         passed to application.
@@ -1422,6 +1444,8 @@ gcs_handle_actions (gcs_conn_t* conn, struct gcs_act_rcvd& rcvd)
     case GCS_ACT_VOTE:
         ret = _handle_vote (*conn, rcvd.act);
         break;
+    case GCS_ACT_COMMIT_CUT:
+        ret = handle_commit_cut(*conn, rcvd.act);
     default:
         break;
     }
@@ -1551,7 +1575,7 @@ _close(gcs_conn_t* conn, bool join_recv_thread)
             assert (GCS_CONN_CLOSED == conn->state);
         }
 
-        gu_info ("Closing replication queue.");
+        gu_info ("Closing send queue.");
         struct gcs_repl_act** act_ptr;
         /* At this point (state == CLOSED) no new threads should be able to
          * queue for repl (check gcs_repl()), and recv thread is joined, so no
@@ -1574,7 +1598,7 @@ _close(gcs_conn_t* conn, bool join_recv_thread)
         /* wake all gcs_recv() threads () */
         // FIXME: this can block waiting for applicaiton threads to fetch all
         // items. In certain situations this can block forever. Ticket #113
-        gu_info ("Closing slave action queue.");
+        gu_info ("Closing receive queue.");
 
 #ifdef GCS_FOR_GARB
         // We are at a state where both the gcomm thread and the receiver
@@ -1653,6 +1677,9 @@ static void *gcs_recv_thread (void *arg)
                 /* In the case of inconsistency our concern is to report it to
                  * replicator ASAP. Current contents of the slave queue are
                  * meaningless. */
+
+                /* KH: We are going to shutdown anyway, but for sanity,
+                 * shouldn't we deallocate queue items buffers? */
                 gu_fifo_clear(conn->recv_q);
             }
 
@@ -2449,6 +2476,7 @@ gcs_set_last_applied (gcs_conn_t* conn, const gu::GTID& gtid)
     }
     else
     {
+        log_debug << "Sending last applied seqno: " << gtid.seqno();
         ret = gcs_core_set_last_applied(conn->core, gtid);
         gcs_sm_leave(conn->sm);
         if (ret < 0)
