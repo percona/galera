@@ -33,6 +33,7 @@ public:
 #endif
     bool               exit()    const { return exit_   ; }
     const std::string& recv_script() const { return recv_script_    ; }
+    const std::string& post_recv_script() const { return post_recv_script_    ; }
 
 private:
 
@@ -46,6 +47,7 @@ private:
     std::string log_;
     std::string cfg_;
     std::string recv_script_;
+    std::string post_recv_script_;
     std::string workdir_;
 #if defined(WITH_COREDUMPER) && WITH_COREDUMPER
     std::string coredumper_;
