@@ -13,6 +13,8 @@
 #include <memory>
 #include <thread>
 #include <atomic>
+#include <mutex>
+#include <condition_variable>
 
 #include <pthread.h>
 
@@ -35,7 +37,7 @@ private:
 
     bool one_loop();
     void loop();
-    void close_connection();
+    void close_connection(bool explicit_close = false);
 
     const Config& config_;
     gu::Config    gconf_;
@@ -75,16 +77,15 @@ private:
     gu_uuid_t sst_source_uuid_;
     bool sst_requested_;
     std::atomic_bool sst_status_keep_running_;
-    bool sst_ended_;
-    bool sst_terminated_;
+    std::atomic_bool sst_ended_;
+    std::atomic_bool sst_terminated_;
 
     std::shared_ptr<process> process_;
     std::thread sst_out_log_;
     std::thread sst_err_log_;
     std::thread sst_status_thread_;
-
-
-
+    std::mutex script_end_mtx_;
+    std:: condition_variable script_end_cv_;
 }; /* RecvLoop */
 
 } /* namespace garb */

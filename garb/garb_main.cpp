@@ -218,7 +218,9 @@ main (int argc, char* argv[])
         }
 
         RecvLoop loop (config);
-        return loop.returnCode();
+        int rcode = loop.returnCode();
+        log_info << "Garbd returns " << rcode;
+        return rcode;
     }
     catch (std::exception& e)
     {
