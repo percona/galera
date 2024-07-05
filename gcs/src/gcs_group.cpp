@@ -2359,7 +2359,7 @@ gcs_group_fetch_pfs_info(
         strncpy(entries[i].host_name, node.name, WSREP_HOSTNAME_LENGTH);
         entries[i].host_name[WSREP_HOSTNAME_LENGTH] = 0;
 
-        strncpy(entries[i].uuid, node.id, WSREP_UUID_STR_LEN);
+        memcpy(entries[i].uuid, node.id, WSREP_UUID_STR_LEN);
         entries[i].uuid[WSREP_UUID_STR_LEN] = 0;
 
         strncpy(
