@@ -80,7 +80,7 @@ namespace
             const auto& str = parts[RealParts::decimal].str();
             if (str.size())
             {
-                const auto n_decis = str.size();
+                const size_t n_decis = str.size();
                 if (n_decis > 9)
                 {
                     throw gu::NotFound();
@@ -101,7 +101,7 @@ namespace
     long long seconds_from_string(const std::string& str)
     {
         auto real = real_from_string(str);
-        const auto max = std::numeric_limits<long long>::max();
+        const long long max = std::numeric_limits<long long>::max();
         if (max/gu::datetime::Sec < real.integer)
         {
             /* Multiplication would overflow */
@@ -120,8 +120,8 @@ namespace
     template <long long Mult>
     long long seconds_from_string_mult(const std::string& str) try
     {
-        const auto val = std::stoll(str);
-        const auto max = std::numeric_limits<long long>::max();
+        const long long val = std::stoll(str);
+        const long long max = std::numeric_limits<long long>::max();
         if (max/Mult < val)
         {
             /* Multiplication would overflow */

@@ -4,6 +4,7 @@
 
 #include "replicator_smm.hpp"
 #include "galera_info.hpp"
+#include "gcs_error.hpp"
 
 #include <gu_abort.h>
 #include <gu_throw.hpp>
@@ -920,12 +921,12 @@ ReplicatorSMM::send_state_request (const StateRequest* const req,
 #endif /* PXC */
             {
                 log_error << "Requesting state transfer failed: "
-                          << ret << "(" << strerror(-ret) << ")";
+                          << gcs_state_transfer_error_str(-ret);
             }
             else if (1 == tries)
             {
                 log_info << "Requesting state transfer failed: "
-                         << ret << "(" << strerror(-ret) << "). "
+                         << gcs_state_transfer_error_str(-ret) << ". "
                          << "Will keep retrying every " << sst_retry_sec_
                          << " second(s)";
             }
@@ -993,7 +994,8 @@ ReplicatorSMM::send_state_request (const StateRequest* const req,
             if (!unsafe) st_.mark_unsafe();
 #endif /* PXC */
             log_fatal << "State transfer request failed unrecoverably: "
-                      << -ret << " (" << strerror(-ret) << "). Most likely "
+                      << gcs_state_transfer_error_str(-ret)
+                      << ". Most likely "
                       << "it is due to inability to communicate with the "
                       << "cluster primary component. Restart required.";
             abort();
@@ -1755,9 +1757,9 @@ void ReplicatorSMM::ist_trx(const TrxHandleSlavePtr& ts, bool must_apply,
     }
 }
 
-void ReplicatorSMM::ist_end(int error)
+void ReplicatorSMM::ist_end(const ist::Result& result)
 {
-    ist_event_queue_.eof(error);
+    ist_event_queue_.eof(result);
 }
 
 void galera::ReplicatorSMM::process_ist_conf_change(const gcs_act_cchange& conf)

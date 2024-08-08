@@ -1,5 +1,5 @@
 //
-// Copyright (C) 2013-2021 Codership Oy <info@codership.com>
+// Copyright (C) 2013-2024 Codership Oy <info@codership.com>
 //
 
 #include "key_set.hpp"
@@ -219,7 +219,7 @@ static inline bool
 key_prefix_is_stronger_than(int const left,
                             int const right)
 {
-    return left > right; // for now key prefix is numerically ordered
+    return left > right;
 }
 
 KeySetOut::KeyPart::KeyPart (KeyParts&      added,
@@ -247,51 +247,16 @@ KeySetOut::KeyPart::KeyPart (KeyParts&      added,
 
     hash_.gather<sizeof(hd.buf)>(hd.buf);
 
-    /* only leaf part of the key can be not WSREP_KEY_SHARED */
+    /* only leaf part of the key can be not of branch type */
     bool const leaf (part_num + 1 == kd.parts_num);
     wsrep_key_type_t const type (leaf ? kd.type : KeyData::BRANCH_KEY_TYPE);
     int const prefix (KeySet::KeyPart::prefix(type, ws_ver));
 
+//    log_info << "Part " << part_num +1 << '/' << kd.parts_num << ": leaf: " << leaf << ", kd.type: " << kd.type << ", type: " << type << ", prefix: " << prefix;
     assert (kd.parts_num > part_num);
 
     KeySet::KeyPart kp(ts, hd, kd.parts, ver_, prefix, part_num, alignment);
 
-#if 0 /* find() way */
-    /* the reason to use find() first, instead of going straight to insert()
-     * is that we need to insert the part that was persistently stored in the
-     * key set. At the same time we can't yet store the key part in the key set
-     * before we can be sure that it is not a duplicate. Sort of 2PC. */
-    KeyParts::iterator found(added.find(kp));
-
-    if (added.end() != found)
-    {
-        if (key_prefix_is_stronger_than(prefix, found->prefix()))
-        {       /* need to ditch weaker and add stronger version of the key */
-            added.erase(found);
-            found = added.end();
-        }
-        else if (leaf || key_prefix_is_stronger_than(found->prefix(), prefix))
-        {
-#ifndef NDEBUG
-            if (leaf)
-                log_debug << "KeyPart ctor: full duplicate of " << *found;
-            else
-                log_debug << "Duplicate of stronger: " << *found;
-#endif
-            throw DUPLICATE();
-        }
-    }
-
-    if (added.end() == found)               /* no such key yet, store and add */
-    {
-        kp.store (store);
-        std::pair<KeyParts::iterator, bool> res(added.insert(kp));
-        assert (res.second);
-        found = res.first;
-    }
-
-    part_ = &(*found);
-#else /* insert() way */
     std::pair<KeyParts::iterator, bool> const inserted(added.insert(kp));
 
     if (inserted.second)
@@ -334,7 +299,6 @@ KeySetOut::KeyPart::KeyPart (KeyParts&      added,
     }
 
     part_ = &(*inserted.first);
-#endif /* insert() way */
 }
 
 void
@@ -348,73 +312,87 @@ KeySetOut::KeyPart::print (std::ostream& os) const
     os << '(' << gu::Hexdump(value_, size_, true) << ')';
 }
 
-#define CHECK_PREVIOUS_KEY 1
+/* Uncomment to enable KeySetOut::append() debug logging */
+// #define GALERA_KSO_APPEND_DEBUG 1
+#ifdef GALERA_KSO_APPEND_DEBUG
+#define KSO_APPEND_DEBUG(...) log_info << __VA_ARGS__
+#else
+#define KSO_APPEND_DEBUG(...)
+#endif
 
-size_t
-KeySetOut::append (const KeyData& kd)
+int KeySetOut::find_common_ancestor_with_previous(const KeyData& kd) const
 {
     int i(0);
-
-//    log_info << "Appending key data:" << kd;
-
-#ifdef CHECK_PREVIOUS_KEY
-    /* find common ancestor with the previous key */
     for (;
          i < kd.parts_num &&
              size_t(i + 1) < prev_.size() &&
              prev_[i + 1].match(kd.parts[i].ptr, kd.parts[i].len);
          ++i)
     {
-#if 0
-        log_info << "prev[" << (i+1) << "]\n"
-                 << prev_[i+1]
-                 << "\nmatches\n"
-                 << gu::Hexdump(kd.parts[i].ptr, kd.parts[i].len, true);
-#endif /* 0 */
+        KSO_APPEND_DEBUG("prev[" << (i+1) << "]\n"
+                         << prev_[i+1]
+                         << "\nmatches\n"
+                         << gu::Hexdump(kd.parts[i].ptr, kd.parts[i].len, true));
     }
-//    log_info << "matched " << i << " parts";
+    assert(size_t(i) < prev_.size());
+    return i;
+}
 
-    int const kd_leaf_prefix(KeySet::KeyPart::prefix(kd.type, ws_ver_));
+size_t
+KeySetOut::append (const KeyData& kd)
+{
+    int i = find_common_ancestor_with_previous(kd);
 
+    KSO_APPEND_DEBUG("Append " << kd);
     /* if we have a fully matched key OR common ancestor is stronger, return */
     if (i > 0)
     {
-        assert (size_t(i) < prev_.size());
-
+        int const kd_leaf_prefix(KeySet::KeyPart::prefix(kd.type, ws_ver_));
+        bool const common_ancestor_is_kd_leaf = (kd.parts_num == i);
+        int const branch_prefix
+            (KeySet::KeyPart::prefix(KeyData::BRANCH_KEY_TYPE, ws_ver_));
         int const exclusive_prefix
             (KeySet::KeyPart::prefix(WSREP_KEY_EXCLUSIVE, ws_ver_));
+        int const common_ancestor_prefix = prev_[i].prefix();
+        bool const common_ancestor_is_prev_leaf = (prev_.size() == (i + 1U));
 
-        if (key_prefix_is_stronger_than(prev_[i].prefix(), kd_leaf_prefix) ||
-            prev_[i].prefix() == exclusive_prefix)
+        KSO_APPEND_DEBUG("Found common ancestor " << prev_[i] << " at position " << i);
+
+        /* The common ancestor is already the strongest possible key. */
+        if (common_ancestor_prefix == exclusive_prefix)
         {
-//            log_info << "Returning after matching a stronger key:\n"<<prev_[i];
-            assert (prev_.size() == (i + 1U)); // only leaf can be exclusive.
+            KSO_APPEND_DEBUG("Common ancestor is exclusive");
             return 0;
         }
 
-        if (kd.parts_num == i) /* leaf */
+        /* Common ancestor is leaf and is strong enough to cover both kd
+         * leaf and branch. */
+        if (common_ancestor_is_prev_leaf
+            && common_ancestor_prefix > kd_leaf_prefix
+            && common_ancestor_prefix > branch_prefix)
         {
-            assert(!key_prefix_is_stronger_than(prev_[i].prefix(),
-                                                kd_leaf_prefix));
+            KSO_APPEND_DEBUG("Common ancestor is previous leaf and stronger");
+            return 0;
+        }
 
-            if (prev_[i].prefix() == kd_leaf_prefix)
+        if (common_ancestor_is_kd_leaf)
+        {
+            KSO_APPEND_DEBUG("Common ancestor is kd leaf");
+            if (kd_leaf_prefix <= common_ancestor_prefix)
             {
-//                log_info << "Returning after matching all " << i << " parts";
+                KSO_APPEND_DEBUG("Common ancestor covers kd leaf");
                 return 0;
             }
-            else /* need to add a stronger copy of the leaf */
-                --i;
+
+            assert(common_ancestor_prefix <= kd_leaf_prefix);
+            /* need to add a stronger copy of the leaf */
+            --i;
         }
     }
 
     int const anc(i);
+    KSO_APPEND_DEBUG("Append key parts after ancestor " << i);
     const KeyPart* parent(&prev_[anc]);
-
-//    log_info << "Common ancestor: " << anc << ' ' << *parent;
-#else
-    KeyPart tmp(prev_[0]);
-    const KeyPart* const parent(&tmp);
-#endif /* CHECK_PREVIOUS_KEY */
 
     /* create parts that didn't match previous key and add to the set
      * of previously added keys. */
@@ -425,8 +403,6 @@ KeySetOut::append (const KeyData& kd)
         try
         {
             KeyPart kp(added_, *this, parent, kd, i, ws_ver_, alignment());
-
-#ifdef CHECK_PREVIOUS_KEY
             if (size_t(j) < new_.size())
             {
                 new_[j] = kp;
@@ -436,13 +412,6 @@ KeySetOut::append (const KeyData& kd)
                 new_().push_back (kp);
             }
             parent = &new_[j];
-#else
-            if (kd.copy) kp.acquire();
-            if (i + 1 != kd.parts_num)
-                tmp = kp; // <- updating parent for next iteration
-#endif /* CHECK_PREVIOUS_KEY */
-
-//            log_info << "pushed " << kp;
         }
         catch (KeyPart::DUPLICATE& e)
         {
@@ -450,9 +419,6 @@ KeySetOut::append (const KeyData& kd)
             /* There is a very small probability that child part throws DUPLICATE
              * even after parent was added as a new key. It does not matter:
              * a duplicate will be a duplicate in certification as well. */
-#ifndef NDEBUG
-//            log_debug << "Returning after catching a DUPLICATE. Part: " << i;
-#endif /* NDEBUG */
             goto out;
         }
     }
@@ -460,7 +426,6 @@ KeySetOut::append (const KeyData& kd)
     assert (i == kd.parts_num);
     assert (anc + j == kd.parts_num);
 
-#ifdef CHECK_PREVIOUS_KEY
     /* copy new parts to prev_ */
     prev_().resize(1 + kd.parts_num);
     std::copy(new_().begin(), new_().begin() + j, prev_().begin() + anc + 1);
@@ -471,28 +436,11 @@ KeySetOut::append (const KeyData& kd)
         {
             prev_[k].acquire();
         }
-#endif /* CHECK_PREVIOUS_KEY */
 
 out:
     return size() - old_size;
 }
 
-#if 0
-const KeyIn&
-galera::KeySetIn::get_key() const
-{
-    size_t offset(0);
-    while (offset < keys_.size())
-    {
-        KeyOS key(version_);
-        if ((offset = unserialize(&keys_[0], keys_.size(), offset, key)) == 0)
-        {
-            gu_throw_fatal << "failed to unserialize key";
-        }
-        s.push_back(key);
-    }
-    assert(offset == keys_.size());
-}
-#endif
+#undef KSO_APPEND_DEBUG
 
 } /* namespace galera */

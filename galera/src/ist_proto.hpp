@@ -736,7 +736,8 @@ namespace galera
                         }
                         else
                         {
-                            gu_throw_error(-msg.ctrl()) <<"peer reported error";
+                            gu_throw_error(-msg.ctrl())
+                                << "peer reported error: " << -msg.ctrl();
                         }
                     }
                 default:

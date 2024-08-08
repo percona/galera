@@ -1,5 +1,5 @@
 //
-// Copyright (C) 2013-2018 Codership Oy <info@codership.com>
+// Copyright (C) 2013-2024 Codership Oy <info@codership.com>
 //
 
 #ifndef GALERA_KEY_DATA_HPP
@@ -29,7 +29,7 @@ struct KeyData
           copy      (cp)
     {}
 
-    static wsrep_key_type_t const BRANCH_KEY_TYPE = WSREP_KEY_SHARED;
+    static wsrep_key_type_t const BRANCH_KEY_TYPE = WSREP_KEY_REFERENCE;
 
     /* Zero-level key constructor */
     explicit
@@ -50,7 +50,8 @@ struct KeyData
       copy     (kd.copy)
     {}
 
-    bool shared() const { return type == WSREP_KEY_SHARED; }
+    bool shared() const { return (type == WSREP_KEY_SHARED); }
+    bool shared_or_ref() const { return (type <= WSREP_KEY_REFERENCE); }
 
     void print(std::ostream& os) const;
 

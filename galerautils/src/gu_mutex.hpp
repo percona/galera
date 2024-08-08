@@ -46,7 +46,7 @@ namespace gu
             if (gu_unlikely(err != 0))
             {
                 assert(0);
-                gu_throw_error(err) << "gu_mutex_destroy()";
+                gu_throw_system_error(err) << "gu_mutex_destroy()";
             }
         }
 
@@ -63,7 +63,7 @@ namespace gu
             else
             {
                 assert(0);
-                gu_throw_error(err) << "Mutex lock failed";
+                gu_throw_system_error(err) << "Mutex lock failed";
             }
         }
 

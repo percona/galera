@@ -190,6 +190,8 @@ ssize_t galera::GcsActionSource::process(void* recv_ctx, bool& exit_loop)
     }
     else if (rc > 0 && skip)
     {
+        Release release(act, gcache_);
+
         replicator_.cancel_seqnos(act.seqno_l, act.seqno_g);
     }
     else

@@ -16,10 +16,122 @@
 //
 // Helper classes
 //
+class MockStreamEngine : public gu::AsioStreamEngine
+{
+public:
+    MockStreamEngine();
+    ~MockStreamEngine();
+
+    std::string scheme() const GALERA_OVERRIDE
+    {
+        return "mock";
+    };
+    void assign_fd(int fd) GALERA_OVERRIDE
+    {
+        fd_ = fd;
+    }
+
+    enum op_status client_handshake() GALERA_OVERRIDE
+    {
+        ++count_client_handshake_called;
+        last_error_ = next_error;
+        return next_result;
+    }
+
+    enum op_status server_handshake() GALERA_OVERRIDE
+    {
+        ++count_server_handshake_called;
+        last_error_ = next_error;
+        log_info << "MockStreamEngine::server_handshake: called "
+                 << count_server_handshake_called
+                 << " next_result: " << next_result;
+        return next_result;
+    }
+
+    op_result read(void* buf, size_t max_count) GALERA_OVERRIDE
+    {
+        ++count_read_called;
+        ssize_t read_result(::recv(fd_, buf, max_count, 0));
+        return map_return_value(read_result, want_read);
+    }
+
+    op_result write(const void* buf, size_t count) GALERA_OVERRIDE
+    {
+        ++count_write_called;
+        ssize_t write_result(::send(fd_, buf, count, MSG_NOSIGNAL));
+        return map_return_value(write_result, want_write);
+    }
+
+    void shutdown() GALERA_OVERRIDE { }
+
+    gu::AsioErrorCode last_error() const GALERA_OVERRIDE
+    {
+        return last_error_;
+    }
+
+    op_result map_return_value(ssize_t result,
+                               enum op_status return_on_block)
+    {
+        if (next_result != success)
+        {
+            last_error_ = next_error;
+            return {next_result, size_t(result)};
+        }
+
+        if (result > 0)
+        {
+            return {success, size_t(result)};
+        }
+        else if (result == 0)
+        {
+            return {eof, size_t(result)};
+        }
+        else if (errno == EAGAIN || errno == EWOULDBLOCK)
+        {
+            last_error_ = errno;
+            return {return_on_block, size_t(result)};
+        }
+        else
+        {
+            last_error_ = next_error;
+            return {error, size_t(result)};
+        }
+    }
+
+    enum op_status next_result;
+    int next_error;
+    size_t count_client_handshake_called;
+    size_t count_server_handshake_called;
+    size_t count_read_called;
+    size_t count_write_called;
+
+private:
+    int fd_;
+    int last_error_;
+};
+
+MockStreamEngine::MockStreamEngine()
+    : next_result(success)
+    , next_error()
+    , count_client_handshake_called()
+    , count_server_handshake_called()
+    , count_read_called()
+    , count_write_called()
+    , fd_()
+    , last_error_()
+{
+    log_info << "MockStreamEngine";
+}
+
+MockStreamEngine::~MockStreamEngine()
+{
+    log_info << "~MockStreamEngine";
+}
+
 class MockSocketHandler : public gu::AsioSocketHandler
 {
 public:
-    MockSocketHandler()
+    MockSocketHandler(const std::string& context = "")
         : gu::AsioSocketHandler()
         , write_buffer_()
         , read_buffer_()
@@ -29,16 +141,21 @@ public:
         , bytes_read_()
         , bytes_written_()
         , last_error_code_()
-    { }
+        , context_(context)
+    {
+
+        log_info << "MockSocketHandler(" << context_ << ")";
+    }
 
     ~MockSocketHandler()
     {
-        log_info << "~MockSocketHandler()";
+        log_info << "~MockSocketHandler(" << context_ << ")";
     }
     virtual void connect_handler(gu::AsioSocket& socket,
                                  const gu::AsioErrorCode& ec) GALERA_OVERRIDE
     {
-        log_info << "connected: " << &socket;
+        log_info << "MockSocketHandler(" << context_ << ") connected: " << &socket
+            << " error_code: " << ec;
         invocations_.push_back("connect");
         connect_handler_called_ = true;
         last_error_code_ = ec;
@@ -100,6 +217,7 @@ private:
     size_t bytes_read_;
     size_t bytes_written_;
     gu::AsioErrorCode last_error_code_;
+    std::string context_;
 };
 
 #include "gu_disable_non_virtual_dtor.hpp"
@@ -109,7 +227,10 @@ class MockAcceptorHandler : public gu::AsioAcceptorHandler
 {
 public:
     MockAcceptorHandler()
-        : accepted_socket_()
+        : cur_stream_engine()
+        , next_stream_engine()
+        , next_socket_handler(std::make_shared<MockSocketHandler>("server"))
+        , accepted_socket_()
         , accepted_handler_()
     { }
 
@@ -120,12 +241,18 @@ public:
                                 const std::shared_ptr<gu::AsioSocket>& socket,
                                 const gu::AsioErrorCode& ec) GALERA_OVERRIDE
     {
-        log_info << "accepted " << socket.get();
-        accepted_socket_ = socket;
-        accepted_handler_ = std::make_shared<MockSocketHandler>();
-        // For some reason progress halts if acceptor does not keep
-        // accepting.
-        acceptor.async_accept(shared_from_this());
+        log_info << "accepted " << socket.get() << " error code: " << ec;
+        if (not ec) {
+            accepted_socket_ = socket;
+            accepted_handler_ = next_socket_handler;
+        }
+        if (next_stream_engine) {
+            cur_stream_engine = next_stream_engine;
+            next_stream_engine = std::make_shared<MockStreamEngine>();
+        }
+        next_socket_handler = std::make_shared<MockSocketHandler>();
+        acceptor.async_accept(shared_from_this(), next_socket_handler,
+                              next_stream_engine);
     }
 
     std::shared_ptr<gu::AsioSocket> accepted_socket() const
@@ -142,6 +269,15 @@ public:
         accepted_socket_.reset();
         accepted_handler_.reset();
     }
+
+    /* Stream engine which was assigned during previous call to
+     * accept_handler(). */
+    std::shared_ptr<MockStreamEngine> cur_stream_engine;
+    /* Stream engine which will be assigned when the
+     * accept_handler() is called next time. */
+    std::shared_ptr<MockStreamEngine> next_stream_engine;
+    /* Socket handler for the next accepted connection. */
+    std::shared_ptr<MockSocketHandler> next_socket_handler;
 private:
     std::shared_ptr<gu::AsioSocket> accepted_socket_;
     std::shared_ptr<MockSocketHandler> accepted_handler_;
@@ -267,7 +403,7 @@ template <class Socket>
 void test_socket_receive_buffer_size_common(Socket& socket, const gu::URI& uri)
 {
     socket.open(uri);
-    auto default_size(socket.get_receive_buffer_size());
+    size_t default_size(socket.get_receive_buffer_size());
     socket.set_receive_buffer_size(default_size/2);
     ck_assert(socket.get_receive_buffer_size() == default_size/2);
 
@@ -314,7 +450,7 @@ template <class Socket>
 void test_socket_send_buffer_size_common(Socket& socket, const gu::URI& uri)
 {
     socket.open(uri);
-    auto default_size(socket.get_send_buffer_size());
+    size_t default_size(socket.get_send_buffer_size());
     socket.set_send_buffer_size(default_size/2);
     ck_assert(socket.get_send_buffer_size() == default_size/2);
 }
@@ -434,7 +570,7 @@ START_TEST(test_tcp_acceptor_receive_buffer_size)
     gu::URI uri("tcp://127.0.0.1:0");
     auto acceptor(io_service.make_acceptor(uri));
     acceptor->open(uri);
-    auto default_size(acceptor->get_receive_buffer_size());
+    size_t default_size(acceptor->get_receive_buffer_size());
     acceptor->set_receive_buffer_size(default_size/2);
     ck_assert(acceptor->get_receive_buffer_size() == default_size/2);
 }
@@ -468,11 +604,24 @@ START_TEST(test_tcp_acceptor_send_buffer_size)
     gu::URI uri("tcp://127.0.0.1:0");
     auto acceptor(io_service.make_acceptor(uri));
     acceptor->open(uri);
-    auto default_size(acceptor->get_send_buffer_size());
+    size_t default_size(acceptor->get_send_buffer_size());
     acceptor->set_send_buffer_size(default_size/2);
     ck_assert(acceptor->get_send_buffer_size() == default_size/2);
 }
 END_TEST
+
+void wait_handshake_ready(gu::AsioIoService& io_service,
+                          MockAcceptorHandler& acceptor_handler,
+                          MockSocketHandler& socket_handler)
+{
+    while (not(acceptor_handler.accepted_socket()
+               && acceptor_handler.accepted_handler()->connect_handler_called()
+               && socket_handler.connect_handler_called()))
+    {
+        io_service.run_one();
+    }
+}
+
 
 template <class Acceptor>
 void test_connect_common(gu::AsioIoService& io_service,
@@ -483,11 +632,7 @@ void test_connect_common(gu::AsioIoService& io_service,
     auto socket(io_service.make_socket(acceptor.listen_addr()));
     socket->async_connect(acceptor.listen_addr(), handler);
 
-    while (not (acceptor_handler.accepted_socket() &&
-                handler->connect_handler_called()))
-    {
-        io_service.run_one();
-    }
+    wait_handshake_ready(io_service, acceptor_handler, *handler);
 
     auto accepted_socket(acceptor_handler.accepted_socket());
     ck_assert_msg(acceptor.listen_addr() == accepted_socket->local_addr(),
@@ -504,7 +649,8 @@ START_TEST(test_tcp_connect)
     auto acceptor_handler(std::make_shared<MockAcceptorHandler>());
     auto acceptor(io_service.make_acceptor(uri));
     acceptor->listen(uri);
-    acceptor->async_accept(acceptor_handler);
+    acceptor->async_accept(acceptor_handler,
+                           acceptor_handler->next_socket_handler);
     test_connect_common(io_service, *acceptor, *acceptor_handler);
 }
 END_TEST
@@ -516,10 +662,12 @@ START_TEST(test_tcp_connect_twice)
     auto acceptor_handler(std::make_shared<MockAcceptorHandler>());
     auto acceptor(io_service.make_acceptor(uri));
     acceptor->listen(uri);
-    acceptor->async_accept(acceptor_handler);
+    acceptor->async_accept(acceptor_handler,
+                           acceptor_handler->next_socket_handler);
     test_connect_common(io_service, *acceptor, *acceptor_handler);
     acceptor_handler->reset();
-    acceptor->async_accept(acceptor_handler);
+    acceptor->async_accept(acceptor_handler,
+                           acceptor_handler->next_socket_handler);
     test_connect_common(io_service, *acceptor, *acceptor_handler);
 }
 END_TEST
@@ -532,12 +680,7 @@ void test_async_read_write_common(gu::AsioIoService& io_service,
     auto handler(std::make_shared<MockSocketHandler>());
     auto socket(io_service.make_socket(acceptor.listen_addr()));
     socket->async_connect(acceptor.listen_addr(), handler);
-
-    while (not (acceptor_handler.accepted_socket() &&
-                handler->connect_handler_called()))
-    {
-        io_service.run_one();
-    }
+    wait_handshake_ready(io_service, acceptor_handler, *handler);
 
     const char* hdr = "hdr";
     const char* data = "data";
@@ -571,7 +714,8 @@ START_TEST(test_tcp_async_read_write)
     auto acceptor_handler(std::make_shared<MockAcceptorHandler>());
     auto acceptor(io_service.make_acceptor(uri));
     acceptor->listen(uri);
-    acceptor->async_accept(acceptor_handler);
+    acceptor->async_accept(acceptor_handler,
+                           acceptor_handler->next_socket_handler);
     test_async_read_write_common(io_service, *acceptor, *acceptor_handler);
 }
 END_TEST
@@ -585,11 +729,7 @@ void test_async_read_write_large_common(gu::AsioIoService& io_service,
     auto socket(io_service.make_socket(acceptor.listen_addr()));
     socket->async_connect(acceptor.listen_addr(), handler);
 
-    while (not (acceptor_handler.accepted_socket() &&
-                handler->connect_handler_called()))
-    {
-        io_service.run_one();
-    }
+    wait_handshake_ready(io_service, acceptor_handler, *handler);
 
     const char* hdr("hdr");
     gu::Buffer data(1 << 23);
@@ -619,8 +759,10 @@ START_TEST(test_tcp_async_read_write_large)
     auto acceptor_handler(std::make_shared<MockAcceptorHandler>());
     auto acceptor(io_service.make_acceptor(uri));
     acceptor->listen(uri);
-    acceptor->async_accept(acceptor_handler);
-    test_async_read_write_large_common(io_service, *acceptor, *acceptor_handler);
+    acceptor->async_accept(acceptor_handler,
+                           acceptor_handler->next_socket_handler);
+    test_async_read_write_large_common(io_service, *acceptor,
+                                       *acceptor_handler);
 }
 END_TEST
 
@@ -634,11 +776,7 @@ void test_async_read_write_small_large_common(gu::AsioIoService& io_service,
     socket->async_connect(acceptor.listen_addr(), handler);
 
     mark_point();
-    while (not (acceptor_handler.accepted_socket() &&
-                handler->connect_handler_called()))
-    {
-        io_service.run_one();
-    }
+    wait_handshake_ready(io_service, acceptor_handler, *handler);
 
     const char* hdr("hdr");
     gu::Buffer data(10);
@@ -708,9 +846,10 @@ START_TEST(test_tcp_async_read_write_small_large)
     auto acceptor_handler(std::make_shared<MockAcceptorHandler>());
     auto acceptor(io_service.make_acceptor(uri));
     acceptor->listen(uri);
-    acceptor->async_accept(acceptor_handler);
-    test_async_read_write_small_large_common(
-        io_service, *acceptor, *acceptor_handler);
+    acceptor->async_accept(acceptor_handler,
+                           acceptor_handler->next_socket_handler);
+    test_async_read_write_small_large_common(io_service, *acceptor,
+                                             *acceptor_handler);
 }
 END_TEST
 
@@ -723,11 +862,7 @@ static void test_async_read_from_client_write_from_server_common(
     auto socket(io_service.make_socket(acceptor.listen_addr()));
     socket->async_connect(acceptor.listen_addr(), handler);
 
-    while (not (acceptor_handler.accepted_socket() &&
-                handler->connect_handler_called()))
-    {
-        io_service.run_one();
-    }
+    wait_handshake_ready(io_service, acceptor_handler, *handler);
 
     const char* hdr = "hdr";
     const char* data = "data";
@@ -761,9 +896,10 @@ START_TEST(test_tcp_async_read_from_client_write_from_server)
     auto acceptor_handler(std::make_shared<MockAcceptorHandler>());
     auto acceptor(io_service.make_acceptor(uri));
     acceptor->listen(uri);
-    acceptor->async_accept(acceptor_handler);
-    test_async_read_from_client_write_from_server_common(
-        io_service, *acceptor, *acceptor_handler);
+    acceptor->async_accept(acceptor_handler,
+                           acceptor_handler->next_socket_handler);
+    test_async_read_from_client_write_from_server_common(io_service, *acceptor,
+                                                         *acceptor_handler);
 }
 END_TEST
 
@@ -808,7 +944,8 @@ START_TEST(test_tcp_write_twice_wo_handling)
     auto acceptor_handler(std::make_shared<MockAcceptorHandler>());
     auto acceptor(io_service.make_acceptor(uri));
     acceptor->listen(uri);
-    acceptor->async_accept(acceptor_handler);
+    acceptor->async_accept(acceptor_handler,
+                           acceptor_handler->next_socket_handler);
     test_write_twice_wo_handling_common(io_service, *acceptor,
                                         *acceptor_handler);
 }
@@ -822,11 +959,8 @@ void test_close_client_common(gu::AsioIoService& io_service,
     auto socket(io_service.make_socket(acceptor.listen_addr()));
     socket->async_connect(acceptor.listen_addr(), handler);
 
-    while (not (acceptor_handler.accepted_socket() &&
-                handler->connect_handler_called()))
-    {
-        io_service.run_one();
-    }
+    wait_handshake_ready(io_service, acceptor_handler, *handler);
+
     socket->close();
 
     char readbuf[1];
@@ -847,7 +981,8 @@ START_TEST(test_tcp_close_client)
     auto acceptor_handler(std::make_shared<MockAcceptorHandler>());
     auto acceptor(io_service.make_acceptor(uri));
     acceptor->listen(uri);
-    acceptor->async_accept(acceptor_handler);
+    acceptor->async_accept(acceptor_handler,
+                           acceptor_handler->next_socket_handler);
     test_close_client_common(io_service, *acceptor, *acceptor_handler);
 }
 END_TEST
@@ -883,7 +1018,8 @@ START_TEST(test_tcp_close_server)
     auto acceptor_handler(std::make_shared<MockAcceptorHandler>());
     auto acceptor(io_service.make_acceptor(uri));
     acceptor->listen(uri);
-    acceptor->async_accept(acceptor_handler);
+    acceptor->async_accept(acceptor_handler,
+                           acceptor_handler->next_socket_handler);
     test_close_server_common(io_service, *acceptor, *acceptor_handler);
 }
 END_TEST
@@ -913,7 +1049,8 @@ START_TEST(test_tcp_get_tcp_info)
     auto acceptor_handler(std::make_shared<MockAcceptorHandler>());
     auto acceptor(io_service.make_acceptor(uri));
     acceptor->listen(uri);
-    acceptor->async_accept(acceptor_handler);
+    acceptor->async_accept(acceptor_handler,
+                           acceptor_handler->next_socket_handler);
     test_get_tcp_info_common(io_service, *acceptor, *acceptor_handler);
 }
 END_TEST
@@ -1023,14 +1160,14 @@ static void write_key(EVP_PKEY* pkey, const std::string& filename)
     fclose(key_file);
 }
 
-static void set_x509v3_extensions(X509* x509, X509* issuer)
+static void set_x509v3_extensions(X509* x509, X509* issuer, bool const is_ca)
 {
     auto* conf_bio = BIO_new(BIO_s_mem());
     char extn[] = "extensions";
     std::string ext{ "[extensions]\n"
                      "authorityKeyIdentifier=keyid,issuer\n"
                      "subjectKeyIdentifier=hash\n" };
-    if (!issuer)
+    if (is_ca)
     {
         ext += "basicConstraints=critical,CA:TRUE\n";
     }
@@ -1055,7 +1192,15 @@ static void set_x509v3_extensions(X509* x509, X509* issuer)
     X509V3_CTX ctx;
     X509V3_set_ctx(&ctx, issuer ? issuer : x509, x509, nullptr, nullptr, 0);
     X509V3_set_nconf(&ctx, conf);
+<<<<<<< HEAD
     if (!X509V3_EXT_add_nconf(conf, &ctx, extn, x509))
+||||||| 0bc393fb
+    if (!X509V3_EXT_add_nconf(conf, &ctx, (char *)"extensions", x509))
+=======
+    char extensions[16];
+    ::strncpy(extensions, "extensions", sizeof(extensions));
+    if (!X509V3_EXT_add_nconf(conf, &ctx, extensions, x509))
+>>>>>>> release_26.4.20
     {
         throw_error("Could not add extension");
     }
@@ -1063,7 +1208,8 @@ static void set_x509v3_extensions(X509* x509, X509* issuer)
     BIO_free(conf_bio);
 }
 
-static X509* create_x509(EVP_PKEY* pkey, X509* issuer, const char* cn)
+static X509* create_x509(EVP_PKEY* pkey, X509* issuer, const char* cn,
+                         bool const is_ca)
 {
     auto* x509 = X509_new();
     /* According to standard, value 2 means version 3. */
@@ -1097,7 +1243,7 @@ static X509* create_x509(EVP_PKEY* pkey, X509* issuer, const char* cn)
         X509_set_issuer_name(x509, X509_get_subject_name(issuer));
     }
 
-    set_x509v3_extensions(x509, issuer);
+    set_x509v3_extensions(x509, issuer, is_ca);
 
     X509_sign(x509, pkey, EVP_sha256());
 
@@ -1137,10 +1283,10 @@ static void generate_self_signed()
 {
     auto* pkey = create_key();
     write_key(pkey, "galera_key.pem");
-    auto* ca = create_x509(pkey, nullptr, "Galera Root");
+    auto* ca = create_x509(pkey, nullptr, "Galera Root", true);
     write_x509(ca, "galera_ca.pem");
 
-    auto* cert = create_x509(pkey, ca, "Galera Cert");
+    auto* cert = create_x509(pkey, ca, "Galera Cert", false);
     write_x509(cert, "galera_cert.pem");
     X509_free(cert);
     X509_free(ca);
@@ -1156,32 +1302,28 @@ static void generate_self_signed()
   Two bundles consisting of intermediate CA and server certificate
   are created for servers 1 and 2.
  */
-static void generate_chains()
+static void generate_self_signed_chains()
 {
-    auto* root_ca_key = create_key();
-    auto* root_ca = create_x509(root_ca_key, nullptr, "Galera Root CA");
-    auto* int_ca_key = create_key();
-    auto* int_ca = create_x509(int_ca_key, root_ca, "Galera Intermediate CA");
-
-    auto* server_1_key = create_key();
-    auto* server_1_cert = create_x509(server_1_key, int_ca, "Galera Server 1");
-    auto* server_2_key = create_key();
-    auto* server_2_cert = create_x509(server_2_key, int_ca, "Galera Server 2");
+    auto* sign_key = create_key();
+    auto* root_ca = create_x509(sign_key, nullptr, "Galera Root CA", true);
+    auto* int_ca
+        = create_x509(sign_key, root_ca, "Galera Intermediate CA", true);
+    auto* server_1_cert
+        = create_x509(sign_key, int_ca, "Galera Server 1", false);
+    auto* server_2_cert
+        = create_x509(sign_key, int_ca, "Galera Server 2", false);
 
     write_x509(root_ca, "galera-ca.pem");
-    write_key(server_1_key, "galera-server-1.key");
+    write_key(sign_key, "galera-server-1.key");
     write_x509_list({ server_1_cert, int_ca }, "bundle-galera-server-1.pem");
-    write_key(server_2_key, "galera-server-2.key");
+    write_key(sign_key, "galera-server-2.key");
     write_x509_list({ server_2_cert, int_ca }, "bundle-galera-server-2.pem");
 
     X509_free(server_2_cert);
-    EVP_PKEY_free(server_2_key);
     X509_free(server_1_cert);
-    EVP_PKEY_free(server_1_key);
     X509_free(int_ca);
-    EVP_PKEY_free(int_ca_key);
     X509_free(root_ca);
-    EVP_PKEY_free(root_ca_key);
+    EVP_PKEY_free(sign_key);
 }
 
 static void generate_certificates()
@@ -1193,7 +1335,7 @@ static void generate_certificates()
 #endif
 
   generate_self_signed();
-  generate_chains();
+  generate_self_signed_chains();
 }
 
 //
@@ -1291,7 +1433,7 @@ START_TEST(test_ssl_connect)
     auto acceptor_handler(std::make_shared<MockAcceptorHandler>());
     auto acceptor(io_service.make_acceptor(uri));
     acceptor->listen(uri);
-    acceptor->async_accept(acceptor_handler);
+    acceptor->async_accept(acceptor_handler, acceptor_handler->next_socket_handler);
     test_connect_common(io_service, *acceptor, *acceptor_handler);
 }
 END_TEST
@@ -1301,12 +1443,13 @@ START_TEST(test_ssl_connect_twice)
     gu::AsioIoService io_service(get_ssl_config());
     gu::URI uri("ssl://127.0.0.1:0");
     auto acceptor_handler(std::make_shared<MockAcceptorHandler>());
+    acceptor_handler->next_stream_engine = nullptr;
     auto acceptor(io_service.make_acceptor(uri));
     acceptor->listen(uri);
-    acceptor->async_accept(acceptor_handler);
+    acceptor->async_accept(acceptor_handler, acceptor_handler->next_socket_handler);
     test_connect_common(io_service, *acceptor, *acceptor_handler);
     acceptor_handler->reset();
-    acceptor->async_accept(acceptor_handler);
+    acceptor->async_accept(acceptor_handler, acceptor_handler->next_socket_handler);
     test_connect_common(io_service, *acceptor, *acceptor_handler);
 }
 END_TEST
@@ -1318,7 +1461,7 @@ START_TEST(test_ssl_async_read_write)
     auto acceptor_handler(std::make_shared<MockAcceptorHandler>());
     auto acceptor(io_service.make_acceptor(uri));
     acceptor->listen(uri);
-    acceptor->async_accept(acceptor_handler);
+    acceptor->async_accept(acceptor_handler, acceptor_handler->next_socket_handler);
     test_async_read_write_common(io_service, *acceptor, *acceptor_handler);
 }
 END_TEST
@@ -1330,7 +1473,7 @@ START_TEST(test_ssl_async_read_write_large)
     auto acceptor_handler(std::make_shared<MockAcceptorHandler>());
     auto acceptor(io_service.make_acceptor(uri));
     acceptor->listen(uri);
-    acceptor->async_accept(acceptor_handler);
+    acceptor->async_accept(acceptor_handler, acceptor_handler->next_socket_handler);
     test_async_read_write_large_common(io_service, *acceptor, *acceptor_handler);
 }
 END_TEST
@@ -1342,7 +1485,7 @@ START_TEST(test_ssl_async_read_write_small_large)
     auto acceptor_handler(std::make_shared<MockAcceptorHandler>());
     auto acceptor(io_service.make_acceptor(uri));
     acceptor->listen(uri);
-    acceptor->async_accept(acceptor_handler);
+    acceptor->async_accept(acceptor_handler, acceptor_handler->next_socket_handler);
     test_async_read_write_small_large_common(
         io_service, *acceptor, *acceptor_handler);
 }
@@ -1355,7 +1498,7 @@ START_TEST(test_ssl_async_read_from_client_write_from_server)
     auto acceptor_handler(std::make_shared<MockAcceptorHandler>());
     auto acceptor(io_service.make_acceptor(uri));
     acceptor->listen(uri);
-    acceptor->async_accept(acceptor_handler);
+    acceptor->async_accept(acceptor_handler, acceptor_handler->next_socket_handler);
     test_async_read_from_client_write_from_server_common(
         io_service, *acceptor, *acceptor_handler);
 }
@@ -1368,7 +1511,7 @@ START_TEST(test_ssl_write_twice_wo_handling)
     auto acceptor_handler(std::make_shared<MockAcceptorHandler>());
     auto acceptor(io_service.make_acceptor(uri));
     acceptor->listen(uri);
-    acceptor->async_accept(acceptor_handler);
+    acceptor->async_accept(acceptor_handler, acceptor_handler->next_socket_handler);
     test_write_twice_wo_handling_common(io_service, *acceptor,
                                         *acceptor_handler);
 }
@@ -1381,7 +1524,7 @@ START_TEST(test_ssl_close_client)
     auto acceptor_handler(std::make_shared<MockAcceptorHandler>());
     auto acceptor(io_service.make_acceptor(uri));
     acceptor->listen(uri);
-    acceptor->async_accept(acceptor_handler);
+    acceptor->async_accept(acceptor_handler, acceptor_handler->next_socket_handler);
     test_close_client_common(io_service, *acceptor, *acceptor_handler);
 }
 END_TEST
@@ -1393,7 +1536,7 @@ START_TEST(test_ssl_close_server)
     auto acceptor_handler(std::make_shared<MockAcceptorHandler>());
     auto acceptor(io_service.make_acceptor(uri));
     acceptor->listen(uri);
-    acceptor->async_accept(acceptor_handler);
+    acceptor->async_accept(acceptor_handler, acceptor_handler->next_socket_handler);
     test_close_server_common(io_service, *acceptor, *acceptor_handler);
 }
 END_TEST
@@ -1405,7 +1548,7 @@ START_TEST(test_ssl_get_tcp_info)
     auto acceptor_handler(std::make_shared<MockAcceptorHandler>());
     auto acceptor(io_service.make_acceptor(uri));
     acceptor->listen(uri);
-    acceptor->async_accept(acceptor_handler);
+    acceptor->async_accept(acceptor_handler, acceptor_handler->next_socket_handler);
     test_get_tcp_info_common(io_service, *acceptor, *acceptor_handler);
 }
 END_TEST
@@ -1419,7 +1562,7 @@ START_TEST(test_ssl_compression_option)
     auto acceptor_handler(std::make_shared<MockAcceptorHandler>());
     auto acceptor(io_service.make_acceptor(uri));
     acceptor->listen(uri);
-    acceptor->async_accept(acceptor_handler);
+    acceptor->async_accept(acceptor_handler, acceptor_handler->next_socket_handler);
     test_async_read_write_common(io_service, *acceptor, *acceptor_handler);
 }
 END_TEST
@@ -1457,21 +1600,25 @@ START_TEST(test_ssl_certificate_chain)
     auto acceptor(server_io_service.make_acceptor(uri));
     acceptor->listen(uri);
     auto acceptor_handler(std::make_shared<MockAcceptorHandler>());
-    acceptor->async_accept(acceptor_handler);
+    acceptor->async_accept(acceptor_handler,
+                           acceptor_handler->next_socket_handler);
 
-    auto handler(std::make_shared<MockSocketHandler>());
+    auto handler(std::make_shared<MockSocketHandler>("client"));
     auto socket(client_io_service.make_socket(acceptor->listen_addr()));
     socket->async_connect(acceptor->listen_addr(), handler);
     client_io_service.run_one(); // Process async connect
     server_io_service.run_one(); // Accept
     client_io_service.run_one(); // Client hello
     client_io_service.run_one(); // Client hello IO completion
-    // server_io_service.run_one(); // Server handles
-    while (acceptor_handler->accepted_socket() != 0)
+
+    while (
+        not(handler->connect_handler_called()
+            && acceptor_handler->accepted_handler()->connect_handler_called()))
     {
         client_io_service.poll_one();
         server_io_service.poll_one();
     }
+    ck_assert(!handler->last_error_code());
 }
 END_TEST
 
@@ -1489,7 +1636,7 @@ START_TEST(test_ssl_invalid_cert)
     auto acceptor(server_io_service.make_acceptor(uri));
     acceptor->listen(uri);
     auto acceptor_handler(std::make_shared<MockAcceptorHandler>());
-    acceptor->async_accept(acceptor_handler);
+    acceptor->async_accept(acceptor_handler, acceptor_handler->next_socket_handler);
 
     auto handler(std::make_shared<MockSocketHandler>());
     auto socket(client_io_service.make_socket(acceptor->listen_addr()));
@@ -1504,7 +1651,6 @@ START_TEST(test_ssl_invalid_cert)
         client_io_service.poll_one();
         server_io_service.poll_one();
     }
-    ck_assert(not acceptor_handler->accepted_socket());
     ck_assert_msg(handler->last_error_code().message().find(
                       "unable to get local issuer certificate") !=
                   std::string::npos,
@@ -1520,6 +1666,7 @@ END_TEST
 // Wsrep TLS service.
 //
 
+<<<<<<< HEAD
 class MockStreamEngine : public gu::AsioStreamEngine
 {
 public:
@@ -1622,11 +1769,116 @@ MockStreamEngine::MockStreamEngine()
     , fd_()
     , last_error_()
 { }
+||||||| 0bc393fb
+class MockStreamEngine : public gu::AsioStreamEngine
+{
+public:
+    MockStreamEngine();
+
+    std::string scheme() const GALERA_OVERRIDE
+    {
+        return "mock";
+    };
+    void assign_fd(int fd) GALERA_OVERRIDE
+    {
+        fd_ = fd;
+    }
+
+    enum op_status client_handshake() GALERA_OVERRIDE
+    {
+        ++count_client_handshake_called;
+        last_error_ = next_error;
+        return next_result;
+    }
+
+    enum op_status server_handshake() GALERA_OVERRIDE
+    {
+        log_info << "MockWsrepTlsService::server_handshake";
+        ++count_server_handshake_called;
+        last_error_ = next_error;
+        return next_result;
+    }
+
+    op_result read(void* buf, size_t max_count) GALERA_OVERRIDE
+    {
+        ++count_read_called;
+        ssize_t read_result(::recv(fd_, buf, max_count, 0));
+        return map_return_value(read_result, want_read);
+    }
+
+    op_result write(const void* buf, size_t count) GALERA_OVERRIDE
+    {
+        ++count_write_called;
+        ssize_t write_result(::send(fd_, buf, count, MSG_NOSIGNAL));
+        return map_return_value(write_result, want_write);
+    }
+
+    void shutdown() GALERA_OVERRIDE { }
+
+    gu::AsioErrorCode last_error() const GALERA_OVERRIDE
+    {
+        return last_error_;
+    }
+
+    op_result map_return_value(ssize_t result,
+                               enum op_status return_on_block)
+    {
+        if (next_result != success)
+        {
+            last_error_ = next_error;
+            return {next_result, size_t(result)};
+        }
+
+        if (result > 0)
+        {
+            return {success, size_t(result)};
+        }
+        else if (result == 0)
+        {
+            return {eof, size_t(result)};
+        }
+        else if (errno == EAGAIN || errno == EWOULDBLOCK)
+        {
+            last_error_ = errno;
+            return {return_on_block, size_t(result)};
+        }
+        else
+        {
+            last_error_ = next_error;
+            return {error, size_t(result)};
+        }
+    }
+
+    enum op_status next_result;
+    int next_error;
+    size_t count_client_handshake_called;
+    size_t count_server_handshake_called;
+    size_t count_read_called;
+    size_t count_write_called;
+
+private:
+    int fd_;
+    int last_error_;
+};
+
+MockStreamEngine::MockStreamEngine()
+    : next_result(success)
+    , next_error()
+    , count_client_handshake_called()
+    , count_server_handshake_called()
+    , count_read_called()
+    , count_write_called()
+    , fd_()
+    , last_error_()
+{ }
+=======
+>>>>>>> release_26.4.20
 
 struct TlsServiceClientTestFixture
 {
     gu::AsioIoService server_io_service;
     std::shared_ptr<MockStreamEngine> client_engine;
+    std::shared_ptr<MockStreamEngine> server_engine;
     gu::AsioIoService client_io_service;
     gu::URI uri;
     std::shared_ptr<gu::AsioAcceptor> acceptor;
@@ -1636,6 +1888,7 @@ struct TlsServiceClientTestFixture
     TlsServiceClientTestFixture()
         : server_io_service()
         , client_engine(std::make_shared<MockStreamEngine>())
+        , server_engine(std::make_shared<MockStreamEngine>())
         , client_io_service(gu::Config())
         , uri("tcp://127.0.0.1:0")
         , acceptor(server_io_service.make_acceptor(uri))
@@ -1644,9 +1897,13 @@ struct TlsServiceClientTestFixture
         , socket_handler(std::make_shared<MockSocketHandler>())
     {
         acceptor->listen(uri);
-        acceptor->async_accept(acceptor_handler);
+        acceptor->async_accept(acceptor_handler,
+                               acceptor_handler->next_socket_handler,
+                               server_engine);
         socket->async_connect(acceptor->listen_addr(), socket_handler);
-        while (not acceptor_handler->accepted_socket())
+        while (not(
+            acceptor_handler->accepted_socket()
+            && acceptor_handler->accepted_handler()->connect_handler_called()))
         {
             server_io_service.run_one();
         }
@@ -1747,7 +2004,6 @@ END_TEST
 
 struct TlsServiceServerTestFixture
 {
-    std::shared_ptr<MockStreamEngine> server_engine;
     gu::AsioIoService server_io_service;
     gu::AsioIoService client_io_service;
     gu::URI uri;
@@ -1756,17 +2012,30 @@ struct TlsServiceServerTestFixture
     std::shared_ptr<gu::AsioSocket> socket;
     std::shared_ptr<MockSocketHandler> socket_handler;
     TlsServiceServerTestFixture()
-        : server_engine(std::make_shared<MockStreamEngine>())
-        , server_io_service(gu::Config())
+        : server_io_service(gu::Config())
         , client_io_service()
         , uri("tcp://127.0.0.1:0")
         , acceptor(server_io_service.make_acceptor(uri))
         , acceptor_handler(std::make_shared<MockAcceptorHandler>())
-        , socket(client_io_service.make_socket(uri))
-        , socket_handler(std::make_shared<MockSocketHandler>())
+        , socket()
+        , socket_handler()
     {
         acceptor->listen(uri);
-        acceptor->async_accept(acceptor_handler, server_engine);
+        /* Override stream engine for tests to be able to do error injection. */
+        acceptor_handler->next_stream_engine
+            = std::make_shared<MockStreamEngine>();
+        acceptor->async_accept(acceptor_handler,
+                               acceptor_handler->next_socket_handler,
+                               acceptor_handler->next_stream_engine);
+        run_async_connect();
+    }
+
+    void run_async_connect()
+    {
+        socket_handler = nullptr;
+        socket_handler = std::make_shared<MockSocketHandler>();
+        socket = client_io_service.make_socket(
+            uri, std::make_shared<MockStreamEngine>());
         socket->async_connect(acceptor->listen_addr(), socket_handler);
         client_io_service.run_one();
         client_io_service.run_one(); // IO completion
@@ -1801,10 +2070,19 @@ struct TlsServiceServerTestFixture
 START_TEST(test_server_handshake_want_read)
 {
     TlsServiceServerTestFixture f;
-    f.server_engine->next_result = gu::AsioStreamEngine::want_read;
+    f.acceptor_handler->next_stream_engine->next_result
+        = gu::AsioStreamEngine::want_read;
     f.run_server_while(
-        [&f]() { return f.server_engine->count_server_handshake_called < 1; });
-    ck_assert(f.server_engine->count_server_handshake_called == 1);
+        [&f]()
+        {
+            return not f.acceptor_handler->cur_stream_engine
+                   || f.acceptor_handler->cur_stream_engine
+                              ->count_server_handshake_called
+                          < 1;
+        });
+    ck_assert_int_eq(
+        f.acceptor_handler->cur_stream_engine->count_server_handshake_called,
+        1);
 
     // Write to connected socket to make accepted socket readable
     std::array<gu::AsioConstBuffer, 2> cbs;
@@ -1815,28 +2093,34 @@ START_TEST(test_server_handshake_want_read)
     f.run_client_while(
         [&f]() { return f.socket_handler->bytes_written() < 4; });
     f.run_server_while(
-        [&f]() { return f.server_engine->count_server_handshake_called < 2; });
+        [&f]() { return f.acceptor_handler->cur_stream_engine->count_server_handshake_called < 2; });
 }
 END_TEST
 
 START_TEST(test_server_handshake_want_write)
 {
     TlsServiceServerTestFixture f;
-    f.server_engine->next_result = gu::AsioStreamEngine::want_write;
+    f.acceptor_handler->next_stream_engine->next_result = gu::AsioStreamEngine::want_write;
     f.run_server_while(
-        [&f]() { return f.server_engine->count_server_handshake_called < 2; });
+        [&f]()
+        {
+            return not f.acceptor_handler->cur_stream_engine
+                   || f.acceptor_handler->cur_stream_engine
+                              ->count_server_handshake_called
+                          < 2;
+        });
 }
 END_TEST
 
 START_TEST(test_server_handshake_eof)
 {
     TlsServiceServerTestFixture f;
-    f.server_engine->next_result = gu::AsioStreamEngine::eof;
+    f.acceptor_handler->next_stream_engine->next_result
+        = gu::AsioStreamEngine::eof;
     f.server_io_service.run_one();
-    // Acceptor silently discards accepted socket which fails during
-    // handshake and restarts async accept.
-    ck_assert(f.acceptor_handler->accepted_socket() == 0);
-    ck_assert(f.server_engine->count_server_handshake_called == 1);
+    ck_assert_int_eq(
+        f.acceptor_handler->cur_stream_engine->count_server_handshake_called,
+        1);
 }
 END_TEST
 
@@ -1845,27 +2129,27 @@ START_TEST(test_server_handshake_eof2)
     TlsServiceServerTestFixture f;
     // First op causes accept handler to restart server handshake call.
     // The EOF will now handled in server handshake handler.
-    f.server_engine->next_result = gu::AsioStreamEngine::want_write;
+    f.acceptor_handler->next_stream_engine->next_result = gu::AsioStreamEngine::want_write;
     f.complete_server_handshake();
-    f.server_engine->next_result = gu::AsioStreamEngine::eof;
+    ck_assert(f.acceptor_handler->cur_stream_engine != nullptr);
+    f.acceptor_handler->cur_stream_engine->next_result = gu::AsioStreamEngine::eof;
     f.server_io_service.run_one();
-    // Acceptor silently discards accepted socket which fails during
-    // handshake and restarts async accept.
-    ck_assert(f.acceptor_handler->accepted_socket() == 0);
-    ck_assert(f.server_engine->count_server_handshake_called == 2);
+    ck_assert_int_eq(
+        f.acceptor_handler->cur_stream_engine->count_server_handshake_called,
+        2);
 }
 END_TEST
 
 START_TEST(test_server_handshake_error)
 {
     TlsServiceServerTestFixture f;
-    f.server_engine->next_result = gu::AsioStreamEngine::error;
-    f.server_engine->next_error = EPIPE;
+    f.acceptor_handler->next_stream_engine->next_result
+        = gu::AsioStreamEngine::error;
+    f.acceptor_handler->next_stream_engine->next_error = EPIPE;
     f.complete_server_handshake();
-    // Acceptor silently discards accepted socket which fails during
-    // handshake and restarts async accept.
-    ck_assert(f.acceptor_handler->accepted_socket() == 0);
-    ck_assert(f.server_engine->count_server_handshake_called == 1);
+    ck_assert_int_eq(
+        f.acceptor_handler->cur_stream_engine->count_server_handshake_called,
+        1);
 }
 END_TEST
 
@@ -1874,15 +2158,35 @@ START_TEST(test_server_handshake_error2)
     TlsServiceServerTestFixture f;
     // First op causes accept handler to restart server handshake call.
     // The error will now handled in server handshake handler.
-    f.server_engine->next_result = gu::AsioStreamEngine::want_write;
+    f.acceptor_handler->next_stream_engine->next_result = gu::AsioStreamEngine::want_write;
     f.complete_server_handshake();
-    f.server_engine->next_result = gu::AsioStreamEngine::error;
-    f.server_engine->next_error = EPIPE;
+    ck_assert(f.acceptor_handler->cur_stream_engine != nullptr);
+    f.acceptor_handler->cur_stream_engine->next_result = gu::AsioStreamEngine::error;
+    f.acceptor_handler->cur_stream_engine->next_error = EPIPE;
     f.server_io_service.run_one();
-    // Acceptor silently discards accepted socket which fails during
-    // handshake and restarts async accept.
-    ck_assert(f.acceptor_handler->accepted_socket() == 0);
-    ck_assert(f.server_engine->count_server_handshake_called == 2);
+    ck_assert_int_eq(f.acceptor_handler->cur_stream_engine->count_server_handshake_called, 2);
+}
+END_TEST
+
+START_TEST(test_accept_after_server_handshake_error)
+{
+    TlsServiceServerTestFixture f;
+    f.acceptor_handler->next_stream_engine->next_result
+        = gu::AsioStreamEngine::error;
+    f.acceptor_handler->next_stream_engine->next_error = EPIPE;
+    f.complete_server_handshake();
+    ck_assert(f.acceptor_handler->cur_stream_engine != nullptr);
+    ck_assert_int_eq(
+        f.acceptor_handler->cur_stream_engine->count_server_handshake_called,
+        1);
+
+    f.acceptor_handler->cur_stream_engine->next_error = 0;
+    f.run_async_connect();
+    f.complete_server_handshake();
+    ck_assert(f.acceptor_handler->accepted_socket() != nullptr);
+    ck_assert_int_eq(
+        f.acceptor_handler->cur_stream_engine->count_server_handshake_called,
+        1);
 }
 END_TEST
 
@@ -1897,25 +2201,25 @@ START_TEST(test_read_want_read)
     cbs[1] = gu::AsioConstBuffer();
     f.socket->async_write(cbs, f.socket_handler);
     f.client_io_service.run_one();
-    f.server_engine->next_result = gu::AsioStreamEngine::want_read;
+    f.acceptor_handler->cur_stream_engine->next_result = gu::AsioStreamEngine::want_read;
     std::array<char, 4> buf;
     f.acceptor_handler->accepted_socket()->async_read(
         gu::AsioMutableBuffer(buf.data(), buf.size()),
         f.acceptor_handler->accepted_handler());
 
-    f.run_server_while([&f]() { return f.server_engine->count_read_called < 1; });
-    ck_assert(f.server_engine->count_read_called == 1);
+    f.run_server_while([&f]() { return f.acceptor_handler->cur_stream_engine->count_read_called < 1; });
+    ck_assert(f.acceptor_handler->cur_stream_engine->count_read_called == 1);
     ck_assert(f.acceptor_handler->accepted_handler()->bytes_read() == 4);
     // Write socket to make accepted socket readable, but do not start
     // async read to simulate stream engine internal operation.
     f.socket->async_write(cbs, f.socket_handler);
     f.client_io_service.reset();
     f.client_io_service.run_one();
-    f.server_engine->next_result = gu::AsioStreamEngine::success;
-    const auto expect_count_read_called = f.server_engine->count_read_called + 1;
+    f.acceptor_handler->cur_stream_engine->next_result = gu::AsioStreamEngine::success;
+    const size_t expect_count_read_called = f.acceptor_handler->cur_stream_engine->count_read_called + 1;
     f.run_server_while(
-		       [&f, expect_count_read_called]() { return f.server_engine->count_read_called < expect_count_read_called; });
-    ck_assert(f.server_engine->count_read_called == expect_count_read_called);
+		       [&f, expect_count_read_called]() { return f.acceptor_handler->cur_stream_engine->count_read_called < expect_count_read_called; });
+    ck_assert(f.acceptor_handler->cur_stream_engine->count_read_called == expect_count_read_called);
     // Extra read should just call read() but the communication should
     // be internal, the handler should not see received data.
     ck_assert(f.acceptor_handler->accepted_handler()->bytes_read() == 4);
@@ -1933,23 +2237,23 @@ START_TEST(test_read_want_write)
     cbs[1] = gu::AsioConstBuffer();
     f.socket->async_write(cbs, f.socket_handler);
     f.client_io_service.run_one();
-    f.server_engine->next_result = gu::AsioStreamEngine::want_write;
+    f.acceptor_handler->cur_stream_engine->next_result = gu::AsioStreamEngine::want_write;
     std::array<char, 4> buf;
     f.acceptor_handler->accepted_socket()->async_read(
         gu::AsioMutableBuffer(buf.data(), buf.size()),
         f.acceptor_handler->accepted_handler());
-    const auto expect_count_read_called = f.server_engine->count_read_called + 1;
+    const size_t expect_count_read_called = f.acceptor_handler->cur_stream_engine->count_read_called + 1;
     f.run_server_while(
-		       [&f, expect_count_read_called]() { return f.server_engine->count_read_called < expect_count_read_called; });
+		       [&f, expect_count_read_called]() { return f.acceptor_handler->cur_stream_engine->count_read_called < expect_count_read_called; });
 
-    ck_assert(f.server_engine->count_read_called == expect_count_read_called);
+    ck_assert(f.acceptor_handler->cur_stream_engine->count_read_called == expect_count_read_called);
     ck_assert(f.acceptor_handler->accepted_handler()->bytes_read() == 4);
     f.run_server_while(
-		       [&f, expect_count_read_called]() { return f.server_engine->count_read_called < expect_count_read_called + 1; });
+		       [&f, expect_count_read_called]() { return f.acceptor_handler->cur_stream_engine->count_read_called < expect_count_read_called + 1; });
     // The result want_write means that the previous operation
     // (in this case read) must be called once again once the
     // socket becomes writable.
-    ck_assert(f.server_engine->count_read_called == expect_count_read_called + 1);
+    ck_assert(f.acceptor_handler->cur_stream_engine->count_read_called == expect_count_read_called + 1);
 }
 END_TEST
 
@@ -1964,8 +2268,8 @@ START_TEST(test_read_eof)
         gu::AsioMutableBuffer(buf.data(), buf.size()),
         f.acceptor_handler->accepted_handler());
     f.run_server_while(
-        [&f]() { return f.server_engine->count_read_called < 1; });
-    ck_assert(f.server_engine->count_read_called == 1);
+        [&f]() { return f.acceptor_handler->cur_stream_engine->count_read_called < 1; });
+    ck_assert(f.acceptor_handler->cur_stream_engine->count_read_called == 1);
     ck_assert(
         f.acceptor_handler->accepted_handler()->last_error_code().is_eof());
 }
@@ -1979,15 +2283,15 @@ START_TEST(test_read_error)
     // Socket close makes the socket readable, but we override
     // the return value with error.
     f.socket->close();
-    f.server_engine->next_result = gu::AsioStreamEngine::error;
-    f.server_engine->next_error = EPIPE;
+    f.acceptor_handler->cur_stream_engine->next_result = gu::AsioStreamEngine::error;
+    f.acceptor_handler->cur_stream_engine->next_error = EPIPE;
     std::array<char, 1> buf;
     f.acceptor_handler->accepted_socket()->async_read(
         gu::AsioMutableBuffer(buf.data(), buf.size()),
         f.acceptor_handler->accepted_handler());
     f.run_server_while(
-        [&f]() { return f.server_engine->count_read_called < 1; });
-    ck_assert(f.server_engine->count_read_called == 1);
+        [&f]() { return f.acceptor_handler->cur_stream_engine->count_read_called < 1; });
+    ck_assert(f.acceptor_handler->cur_stream_engine->count_read_called == 1);
     ck_assert(f.acceptor_handler->accepted_handler()->last_error_code().value()
               == EPIPE);
 }
@@ -1999,7 +2303,7 @@ START_TEST(test_write_want_read)
     f.complete_server_handshake();
     ck_assert(f.acceptor_handler->accepted_socket() != 0);
 
-    f.server_engine->next_result = gu::AsioStreamEngine::want_read;
+    f.acceptor_handler->cur_stream_engine->next_result = gu::AsioStreamEngine::want_read;
     std::array<gu::AsioConstBuffer, 2> cbs;
     cbs[0] = gu::AsioConstBuffer("writ", 4);
     cbs[1] = gu::AsioConstBuffer();
@@ -2007,7 +2311,7 @@ START_TEST(test_write_want_read)
         cbs, f.acceptor_handler->accepted_handler());
     f.server_io_service.run_one();
     ck_assert(f.acceptor_handler->accepted_handler()->bytes_written() == 4);
-    ck_assert(f.server_engine->count_write_called == 1);
+    ck_assert(f.acceptor_handler->cur_stream_engine->count_write_called == 1);
     // Write to client socket to make server side socket readable
     f.socket->async_write(cbs, f.socket_handler);
     f.client_io_service.reset();
@@ -2016,9 +2320,9 @@ START_TEST(test_write_want_read)
     // Now the server side socket should become readable and
     // the second call to write should happen.
     f.run_server_while(
-        [&]() { return f.server_engine->count_write_called < 2; });
+        [&]() { return f.acceptor_handler->cur_stream_engine->count_write_called < 2; });
     ck_assert(f.acceptor_handler->accepted_handler()->bytes_written() == 4);
-    ck_assert(f.server_engine->count_write_called == 2);
+    ck_assert(f.acceptor_handler->cur_stream_engine->count_write_called == 2);
 }
 END_TEST
 
@@ -2028,7 +2332,7 @@ START_TEST(test_write_want_write)
     f.complete_server_handshake();
     ck_assert(f.acceptor_handler->accepted_socket() != 0);
 
-    f.server_engine->next_result = gu::AsioStreamEngine::want_write;
+    f.acceptor_handler->cur_stream_engine->next_result = gu::AsioStreamEngine::want_write;
     std::array<gu::AsioConstBuffer, 2> cbs;
     cbs[0] = gu::AsioConstBuffer("writ", 4);
     cbs[1] = gu::AsioConstBuffer();
@@ -2036,13 +2340,13 @@ START_TEST(test_write_want_write)
         cbs, f.acceptor_handler->accepted_handler());
     f.server_io_service.run_one();
     ck_assert(f.acceptor_handler->accepted_handler()->bytes_written() == 4);
-    ck_assert(f.server_engine->count_write_called == 1);
+    ck_assert(f.acceptor_handler->cur_stream_engine->count_write_called == 1);
     // Now the server side socket should remain writable and the
     // the second call to write should happen.
     f.run_server_while(
-        [&f]() { return f.server_engine->count_write_called < 2; });
+        [&f]() { return f.acceptor_handler->cur_stream_engine->count_write_called < 2; });
     ck_assert(f.acceptor_handler->accepted_handler()->bytes_written() == 4);
-    ck_assert(f.server_engine->count_write_called == 2);
+    ck_assert(f.acceptor_handler->cur_stream_engine->count_write_called == 2);
 }
 END_TEST
 
@@ -2052,7 +2356,7 @@ START_TEST(test_write_eof)
     f.complete_server_handshake();
     ck_assert(f.acceptor_handler->accepted_socket() != 0);
 
-    f.server_engine->next_result = gu::AsioStreamEngine::want_read;
+    f.acceptor_handler->cur_stream_engine->next_result = gu::AsioStreamEngine::want_read;
     std::array<gu::AsioConstBuffer, 2> cbs;
     cbs[0] = gu::AsioConstBuffer("writ", 4);
     cbs[1] = gu::AsioConstBuffer();
@@ -2060,16 +2364,16 @@ START_TEST(test_write_eof)
         cbs, f.acceptor_handler->accepted_handler());
     f.server_io_service.run_one();
     ck_assert(f.acceptor_handler->accepted_handler()->bytes_written() == 4);
-    ck_assert(f.server_engine->count_write_called == 1);
+    ck_assert(f.acceptor_handler->cur_stream_engine->count_write_called == 1);
     // Write to client socket to make server side socket readable
     f.socket->async_write(cbs, f.socket_handler);
     f.client_io_service.reset();
     f.client_io_service.run_one();
     ck_assert(f.socket_handler->bytes_written() == 4);
-    f.server_engine->next_result = gu::AsioStreamEngine::eof;
+    f.acceptor_handler->cur_stream_engine->next_result = gu::AsioStreamEngine::eof;
     f.run_server_while(
-        [&f] { return f.server_engine->count_write_called < 2; });
-    ck_assert(f.server_engine->count_write_called == 2);
+        [&f] { return f.acceptor_handler->cur_stream_engine->count_write_called < 2; });
+    ck_assert(f.acceptor_handler->cur_stream_engine->count_write_called == 2);
     ck_assert(
         f.acceptor_handler->accepted_handler()->last_error_code().is_eof());
 }
@@ -2081,16 +2385,16 @@ START_TEST(test_write_error)
     f.complete_server_handshake();
     ck_assert(f.acceptor_handler->accepted_socket() != 0);
 
-    f.server_engine->next_result = gu::AsioStreamEngine::error;
-    f.server_engine->next_error = EPIPE;
+    f.acceptor_handler->cur_stream_engine->next_result = gu::AsioStreamEngine::error;
+    f.acceptor_handler->cur_stream_engine->next_error = EPIPE;
     std::array<gu::AsioConstBuffer, 2> cbs;
     cbs[0] = gu::AsioConstBuffer("writ", 4);
     cbs[1] = gu::AsioConstBuffer();
     f.acceptor_handler->accepted_socket()->async_write(
         cbs, f.acceptor_handler->accepted_handler());
     f.run_server_while(
-        [&f] { return f.server_engine->count_write_called < 1; });
-    ck_assert(f.server_engine->count_write_called == 1);
+        [&f] { return f.acceptor_handler->cur_stream_engine->count_write_called < 1; });
+    ck_assert(f.acceptor_handler->cur_stream_engine->count_write_called == 1);
     // Write will succeed before the error is injected, so there will be
     // some bytes written.
     ck_assert(f.acceptor_handler->accepted_handler()->bytes_written() == 4);
@@ -2586,6 +2890,10 @@ Suite* gu_asio_suite()
 
     tc = tcase_create("test_server_handshake_error2");
     tcase_add_test(tc, test_server_handshake_error2);
+    suite_add_tcase(s, tc);
+
+    tc = tcase_create("test_accept_after_server_handshake_error");
+    tcase_add_test(tc, test_accept_after_server_handshake_error);
     suite_add_tcase(s, tc);
 
     tc = tcase_create("test_read_want_read");

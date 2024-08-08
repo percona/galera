@@ -1,4 +1,4 @@
-/* Copyright (C) 2013-2020 Codership Oy <info@codership.com>
+/* Copyright (C) 2013-2024 Codership Oy <info@codership.com>
  *
  * $Id$
  */
@@ -34,8 +34,9 @@ static void ver3_basic(gu::RecordSet::Version const rsv,
     ck_assert(wso.is_empty());
 
     // keep WSREP_KEY_SHARED here, see loop below
-    TestKey tk0(KeySet::MAX_VERSION, WSREP_KEY_SHARED, true, "a0");
+    TestKey tk0(KeySet::MAX_VERSION, WSREP_KEY_SHARED, true, "a0", "a1");
     wso.append_key(tk0());
+    int const expected_count(2);
     ck_assert(wso.is_empty() == false);
 
     uint64_t const data_out_volatile(0xaabbccdd);
@@ -77,6 +78,7 @@ static void ver3_basic(gu::RecordSet::Version const rsv,
 
     gu::Buf const in_buf = { in.data(), static_cast<ssize_t>(in.size()) };
 
+    int const P_BRANCH(KeySet::KeyPart::prefix(KeyData::BRANCH_KEY_TYPE, wsv));
     int const P_SHARED(KeySet::KeyPart::prefix(WSREP_KEY_SHARED, wsv));
 
     /* read ws buffer and "certify" */
@@ -96,15 +98,18 @@ static void ver3_basic(gu::RecordSet::Version const rsv,
 
         mark_point();
         const KeySetIn& ksi(wsi.keyset());
-        ck_assert(ksi.count() == 1);
+        ck_assert(ksi.count() == expected_count);
 
         mark_point();
+        int branch(0);
         int shared(0);
         for (int i(0); i < ksi.count(); ++i)
         {
             KeySet::KeyPart kp(ksi.next());
+            branch += (kp.prefix() == P_BRANCH);
             shared += (kp.prefix() == P_SHARED);
         }
+        ck_assert(branch > 0);
         ck_assert(shared > 0);
 
         wsi.verify_checksum();
@@ -127,16 +132,16 @@ static void ver3_basic(gu::RecordSet::Version const rsv,
 
         mark_point();
         const KeySetIn& ksi(wsi.keyset());
-        ck_assert(ksi.count() == 1);
+        ck_assert(ksi.count() == expected_count);
 
         mark_point();
-        int shared(0);
+        int branch(0);
         for (int i(0); i < ksi.count(); ++i)
         {
             KeySet::KeyPart kp(ksi.next());
-            shared += (kp.prefix() == P_SHARED);
+            branch += (kp.prefix() == P_BRANCH);
         }
-        ck_assert(shared > 0);
+        ck_assert(branch > 0);
 
         wsi.verify_checksum();
 

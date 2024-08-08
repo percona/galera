@@ -88,17 +88,19 @@ void galera::MappedBuffer::reserve(size_t sz)
             fd_ = mkstemp(&file_[0]);
             if (fd_ == -1)
             {
-                gu_throw_error(errno) << "mkstemp(" << file_ << ") failed";
+                gu_throw_system_error(errno)
+                    << "mkstemp(" << file_ << ") failed";
             }
             if (ftruncate(fd_, sz) == -1)
             {
-                gu_throw_error(errno) << "ftruncate() failed";
+                gu_throw_system_error(errno) << "ftruncate() failed";
             }
             byte_t* tmp(reinterpret_cast<byte_t*>(
                             mmap(NULL, sz, PROT_READ | PROT_WRITE, MAP_PRIVATE,
                                  fd_, 0)));
             if (tmp == MAP_FAILED)
             {
+<<<<<<< HEAD
 #ifdef PXC
                 int dummy_errno = errno;
                 free(buf_);
@@ -106,11 +108,21 @@ void galera::MappedBuffer::reserve(size_t sz)
                 clear();
                 gu_throw_error(dummy_errno) << "mmap() failed";
 #else
+||||||| 0bc393fb
+=======
+                const int error = errno;
+>>>>>>> release_26.4.20
                 free(buf_);
                 buf_ = 0;
                 clear();
+<<<<<<< HEAD
                 gu_throw_error(ENOMEM) << "mmap() failed";
 #endif /* PXC */
+||||||| 0bc393fb
+                gu_throw_error(ENOMEM) << "mmap() failed";
+=======
+                gu_throw_system_error(error) << "mmap() failed";
+>>>>>>> release_26.4.20
             }
             copy(buf_, buf_ + buf_size_, tmp);
             free(buf_);
@@ -120,26 +132,37 @@ void galera::MappedBuffer::reserve(size_t sz)
         {
             if (munmap(buf_, real_buf_size_) != 0)
             {
-                gu_throw_error(errno) << "munmap() failed";
+                gu_throw_system_error(errno) << "munmap() failed";
             }
             if (ftruncate(fd_, sz) == -1)
             {
-                gu_throw_error(errno) << "fruncate() failed";
+                gu_throw_system_error(errno) << "fruncate() failed";
             }
             byte_t* tmp(reinterpret_cast<byte_t*>(
                             mmap(NULL, sz, PROT_READ | PROT_WRITE, MAP_PRIVATE, fd_, 0)));
             if (tmp == MAP_FAILED)
             {
+<<<<<<< HEAD
 #ifdef PXC
                 int dummy_errno = errno;
                 buf_ = 0;
                 clear();
                 gu_throw_error(dummy_errno) << "mmap() failed";
 #else
+||||||| 0bc393fb
+=======
+                const int error = errno;
+>>>>>>> release_26.4.20
                 buf_ = 0;
                 clear();
+<<<<<<< HEAD
                 gu_throw_error(ENOMEM) << "mmap() failed";
 #endif /* PXC */
+||||||| 0bc393fb
+                gu_throw_error(ENOMEM) << "mmap() failed";
+=======
+                gu_throw_system_error(error) << "mmap() failed";
+>>>>>>> release_26.4.20
             }
             buf_ = tmp;
         }
@@ -150,11 +173,17 @@ void galera::MappedBuffer::reserve(size_t sz)
         byte_t* tmp(reinterpret_cast<byte_t*>(realloc(buf_, sz)));
         if (tmp == 0)
         {
+<<<<<<< HEAD
 #ifdef PXC
             gu_throw_error(errno) << "realloc failed";
 #else
             gu_throw_error(ENOMEM) << "realloc failed";
 #endif /* PXC */
+||||||| 0bc393fb
+            gu_throw_error(ENOMEM) << "realloc failed";
+=======
+            gu_throw_system_error(ENOMEM) << "realloc failed";
+>>>>>>> release_26.4.20
         }
         buf_ = tmp;
     }

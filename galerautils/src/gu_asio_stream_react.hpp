@@ -1,5 +1,5 @@
 //
-// Copyright (C) 2020 Codership Oy <info@codership.com>
+// Copyright (C) 2020-2024 Codership Oy <info@codership.com>
 //
 
 /** @file gu_asio_stream_react.hpp
@@ -74,16 +74,14 @@ namespace gu
             const std::shared_ptr<AsioSocketHandler>&,
             AsioStreamEngine::op_status);
         void complete_server_handshake(
-            const std::shared_ptr<AsioAcceptor>&,
-            AsioStreamEngine::op_status,
-            const std::shared_ptr<AsioAcceptorHandler>&);
+            const std::shared_ptr<AsioSocketHandler>&,
+            AsioStreamEngine::op_status);
         void connect_handler(const std::shared_ptr<AsioSocketHandler>&,
                              const asio::error_code& ec);
         void client_handshake_handler(const std::shared_ptr<AsioSocketHandler>&,
                                       const asio::error_code&);
         void server_handshake_handler(
-            const std::shared_ptr<AsioAcceptor>& acceptor,
-            const std::shared_ptr<AsioAcceptorHandler>& acceptor_handler,
+            const std::shared_ptr<AsioSocketHandler>&,
             const asio::error_code& ec);
         void read_handler(const std::shared_ptr<AsioSocketHandler>&,
                           const asio::error_code&);
@@ -113,6 +111,8 @@ namespace gu
         void handle_write_handler_error(
             const std::shared_ptr<AsioSocketHandler>&,
             const AsioErrorCode&);
+        void handle_isolation_error(
+            const std::shared_ptr<AsioSocketHandler>&);
 
         void set_non_blocking(bool);
 
@@ -127,6 +127,7 @@ namespace gu
         std::string local_addr_;
         std::string remote_addr_;
         bool connected_;
+        bool handshake_complete_;
         bool non_blocking_;
 
         // Flags and state for operations in progress.
@@ -242,6 +243,7 @@ namespace gu
         virtual void close() GALERA_OVERRIDE;
         virtual void async_accept(
             const std::shared_ptr<AsioAcceptorHandler>&,
+            const std::shared_ptr<AsioSocketHandler>&,
             const std::shared_ptr<AsioStreamEngine>& engine = nullptr)
             GALERA_OVERRIDE;
         virtual std::shared_ptr<AsioSocket> accept() GALERA_OVERRIDE;
@@ -255,6 +257,7 @@ namespace gu
         // ASIO handlers
         void accept_handler(const std::shared_ptr<AsioStreamReact>&,
                             const std::shared_ptr<AsioAcceptorHandler>&,
+                            const std::shared_ptr<AsioSocketHandler>&,
                             const asio::error_code&);
     private:
         std::string debug_print() const;
@@ -264,7 +267,7 @@ namespace gu
         bool listening_;
         std::shared_ptr<AsioStreamEngine> engine_;
     };
-}
+} // namespace gu
 
 #include "gu_enable_non_virtual_dtor.hpp"
 

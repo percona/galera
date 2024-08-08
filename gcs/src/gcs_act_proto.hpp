@@ -24,8 +24,10 @@ typedef uint8_t gcs_proto_t;
  * 2 - support for commit cut in state exchange msg
  * 3 - fix for commit cut tracking issue
  *     (needs protocol version bump to keep it identical on all nodes)
+ * 4 - fix for the error voting protocol
+ *     (must keep it identical on all nodes)
  */
-#define GCS_PROTO_MAX 3
+#define GCS_PROTO_MAX 4
 
 /*! Internal action fragment data representation */
 typedef struct gcs_act_frag

@@ -61,7 +61,7 @@ GcsGroup::common_ctor(const char*  node_name,
                                  node_name, inc_addr, gver, rver, aver));
     if (err)
     {
-        gu_throw_error(-err) << "GcsGroup init failed";
+        gu_throw_error(-err) << "GcsGroup init failed: " << -err;
     }
 
     initialized_ = true;

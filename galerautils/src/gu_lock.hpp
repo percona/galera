@@ -116,7 +116,7 @@ namespace gu
             mtx_->owned_  = gu_thread_self();
 #endif /* GU_MUTEX_DEBUG */
 
-            if (gu_unlikely(ret)) gu_throw_error(ret);
+            if (gu_unlikely(ret)) gu_throw_system_error(ret);
         }
 
 

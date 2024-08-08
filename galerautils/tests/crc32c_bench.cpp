@@ -77,14 +77,14 @@ run_bench_with_impl(gu_crc32c_func_t impl,
     }
 
 #if __cplusplus >= 201103L
-    auto start(std::chrono::steady_clock::now());
-    auto result(run_bench(len, reps));
-    auto stop(std::chrono::steady_clock::now());
-    auto duration(std::chrono::duration<double>(stop - start).count());
+    auto const start(std::chrono::steady_clock::now());
+    uint32_t const result(run_bench(len, reps));
+    auto const stop(std::chrono::steady_clock::now());
+    double const duration(std::chrono::duration<double>(stop - start).count());
 #else
     struct timeval start, stop;
     gettimeofday(&start, NULL);
-    uint32_t result(run_bench(len, reps));
+    uint32_t const result(run_bench(len, reps));
     gettimeofday(&stop,  NULL);
     double const duration(time_diff(stop, start));
 #endif // C++11

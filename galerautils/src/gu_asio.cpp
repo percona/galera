@@ -245,6 +245,11 @@ std::ostream& gu::operator<<(std::ostream& os, const gu::AsioErrorCode& ec)
     return (os << ec.message());
 }
 
+gu::AsioErrorCode gu::AsioErrorCode::make_eof()
+{
+  return {asio::error::misc_errors::eof, gu_asio_misc_category};
+}
+
 bool gu::AsioErrorCode::is_eof() const
 {
     return (category_ &&
@@ -317,7 +322,7 @@ namespace
 
             if (ifs.good() == false)
             {
-                gu_throw_error(errno) <<
+                gu_throw_system_error(errno) <<
                     "could not open password file '" << file << "'";
             }
 
@@ -910,3 +915,7 @@ void gu::deinit_allowlist_service_v1()
     --gu_allowlist_service_usage;
     if (gu_allowlist_service_usage == 0) gu_allowlist_service = 0;
 }
+
+std::atomic<enum wsrep_node_isolation_mode> gu::gu_asio_node_isolation_mode{
+    WSREP_NODE_ISOLATION_NOT_ISOLATED
+};

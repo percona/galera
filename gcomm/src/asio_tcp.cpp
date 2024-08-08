@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2012-2020 Codership Oy <info@codership.com>
+ * Copyright (C) 2012-2024 Codership Oy <info@codership.com>
  */
 
 #include "asio_tcp.hpp"
@@ -23,7 +23,7 @@ void set_recv_buf_size_helper(const gu::Config& conf, Socket& socket)
         assert(ssize_t(recv_buf_size) >= 0);
 
         socket->set_receive_buffer_size(recv_buf_size);
-        auto cur_value(socket->get_receive_buffer_size());
+        size_t cur_value(socket->get_receive_buffer_size());
         log_debug << "socket recv buf size " << cur_value;
         if (cur_value < recv_buf_size && not asio_recv_buf_warned)
         {
@@ -48,7 +48,7 @@ void set_send_buf_size_helper(const gu::Config& conf, Socket& socket)
         assert(ssize_t(send_buf_size) >= 0);
 
         socket->set_send_buffer_size(send_buf_size);
-        auto cur_value(socket->get_send_buffer_size());
+        size_t cur_value(socket->get_send_buffer_size());
         log_debug << "socket send buf size " << cur_value;
         if (cur_value < send_buf_size && not asio_send_buf_warned)
         {
@@ -142,6 +142,7 @@ void gcomm::AsioTcpSocket::connect_handler(gu::AsioSocket& socket,
     {
         if (ec)
         {
+            log_info << "Failed to establish connection: " << ec;
             FAILED_HANDLER(ec);
             return;
         }
@@ -688,7 +689,7 @@ gcomm::AsioTcpAcceptor::AsioTcpAcceptor(AsioProtonet& net, const gu::URI& uri)
     Acceptor        (uri),
     net_            (net),
     acceptor_       (net_.io_service_.make_acceptor(uri)),
-    accepted_socket_()
+    next_socket_()
 { }
 
 gcomm::AsioTcpAcceptor::~AsioTcpAcceptor()
@@ -704,13 +705,14 @@ void gcomm::AsioTcpAcceptor::accept_handler(
 {
     if (!error)
     {
-        auto socket(std::make_shared<AsioTcpSocket>(net_, uri_, accepted_socket));
-        socket->state_ = Socket::S_CONNECTED;
-        accepted_socket_ = socket;
-        log_debug << "accepted socket " << socket->id();
+        next_socket_->socket_ = accepted_socket;
+        /* Notify upper layer which then calls accept() to acquire ownership. */
         net_.dispatch(id(), Datagram(), ProtoUpMeta(error.value()));
-        acceptor_->async_accept(shared_from_this());
+        assert(not next_socket_);
     }
+    acceptor_->async_accept(
+        shared_from_this(),
+        next_socket_ = std::make_shared<AsioTcpSocket>(net_, uri_, nullptr));
 }
 
 void gcomm::AsioTcpAcceptor::set_buf_sizes()
@@ -725,7 +727,8 @@ void gcomm::AsioTcpAcceptor::listen(const gu::URI& uri)
     acceptor_->open(uri);
     set_buf_sizes(); // Must be done before listen
     acceptor_->listen(uri);
-    acceptor_->async_accept(shared_from_this());
+    next_socket_ = std::make_shared<AsioTcpSocket>(net_, uri_, nullptr);
+    acceptor_->async_accept(shared_from_this(), next_socket_);
 }
 
 std::string gcomm::AsioTcpAcceptor::listen_addr() const
@@ -741,9 +744,11 @@ void gcomm::AsioTcpAcceptor::close()
 
 gcomm::SocketPtr gcomm::AsioTcpAcceptor::accept()
 {
-    if (accepted_socket_->state() == Socket::S_CONNECTED)
-    {
-        accepted_socket_->async_receive();
-    }
-    return accepted_socket_;
+    /* Note that the socket is not flagged as connected yet, it may
+     * still be in the middle of the handshake, e.g. if TLS is used.
+     * Once the handshake is complete, connect_handler() will be called
+     * which will notify the upper layer that the socket is ready. */
+    auto ret = next_socket_;
+    next_socket_ = nullptr;
+    return ret;
 }

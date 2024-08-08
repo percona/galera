@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2010-2019 Codership Oy <info@codership.com>
+ * Copyright (C) 2010-2024 Codership Oy <info@codership.com>
  */
 
 #ifndef GCOMM_ASIO_TCP_HPP
@@ -131,7 +131,7 @@ private:
 
     AsioProtonet& net_;
     std::shared_ptr<gu::AsioAcceptor> acceptor_;
-    SocketPtr accepted_socket_;
+    std::shared_ptr<AsioTcpSocket> next_socket_;
 };
 
 #include "gu_enable_non_virtual_dtor.hpp"
