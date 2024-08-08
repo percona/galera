@@ -16,17 +16,13 @@
 
 #include <errno.h>
 
-<<<<<<< HEAD
 #ifdef PXC
 #include "gu_debug_sync.hpp"
 #include <arpa/inet.h>
 #include <string>
 #endif /* PXC */
 
-||||||| 0bc393fb
-=======
 #include <cinttypes>
->>>>>>> release_26.4.20
 #include <limits>
 #include <regex>
 
@@ -499,26 +495,14 @@ group_post_state_exchange (gcs_group_t* group)
     gu_info ("Quorum results:"
              "\n\tversion    = %u,"
              "\n\tcomponent  = %s,"
-<<<<<<< HEAD
-             "\n\tconf_id    = %lld,"
-#ifdef PXC
-             "\n\tmembers    = %d/%d (primary/total),"
-#else
-             "\n\tmembers    = %d/%d (joined/total),"
-#endif /* PXC */
-             "\n\tact_id     = %lld,"
-             "\n\tlast_appl. = %lld,"
-||||||| 0bc393fb
-             "\n\tconf_id    = %lld,"
-             "\n\tmembers    = %d/%d (joined/total),"
-             "\n\tact_id     = %lld,"
-             "\n\tlast_appl. = %lld,"
-=======
              "\n\tconf_id    = %" PRId64 ","
+#ifdef PXC
+             "\n\tmembers    = %ld/%ld (primary/total),"
+#else
              "\n\tmembers    = %ld/%ld (joined/total),"
+#endif /* PXC */
              "\n\tact_id     = %" PRId64 ","
              "\n\tlast_appl. = %" PRId64 ","
->>>>>>> release_26.4.20
              "\n\tprotocols  = %d/%d/%d (gcs/repl/appl),"
              "\n\tvote policy= %d,"
              "\n\tgroup UUID = " GU_UUID_FORMAT,
@@ -1139,20 +1123,14 @@ gcs_group_handle_vote_msg (gcs_group_t* group, const gcs_recv_msg_t* msg)
                  << gtid << ',' << gu::PrintBase<>(code) << ": "
                  << (code ? (data ? data : "(null)") : "Success");
 
-<<<<<<< HEAD
         if (code != 0)
         {
             std::string err_msg(data, strlen(data));
             code = recompute_vote_based_on_error_code(gtid, err_msg, code, true);
         }
 
-        gcs_node_set_vote (&sender, gtid.seqno(), code);
-||||||| 0bc393fb
-        gcs_node_set_vote (&sender, gtid.seqno(), code);
-=======
         gcs_node_set_vote (&sender, gtid.seqno(), code,
                            group->quorum.gcs_proto_ver);
->>>>>>> release_26.4.20
 
         if (group_recount_votes(*group))
         {
@@ -1840,7 +1818,6 @@ gcs_group_find_donor(const gcs_group_t* group,
     return donor_idx;
 }
 
-<<<<<<< HEAD
 #ifdef PXC
 /* Function help detect presence of ip address in wsrep_sst_donor.
 Use of ip-address in sst_donor is not allowed. If found an error is raised. */
@@ -1881,10 +1858,6 @@ static bool ip_address_present(const char* const string)
 }
 #endif /* PXC */
 
-||||||| 0bc393fb
-
-=======
->>>>>>> release_26.4.20
 /*!
  * Selects and returns the index of state transfer donor, if available.
  * Updates donor and joiner status if state transfer is possible
@@ -1969,37 +1942,6 @@ group_select_donor (gcs_group_t* group,
             assert(true == desync);
         }
     }
-<<<<<<< HEAD
-    else {
-#ifdef PXC
-        const char* donor_ip_addr_err_msg = "";
-        if (donor_string && ip_address_present(donor_string)) {
-           donor_ip_addr_err_msg = " (Check for use of IP address in"
-                                   " wsrep_sst_donor. wsrep_sst_donor"
-                                   " expects node name only.)";
-        }
-        gu_warn ("Member %d.%d (%s) requested state transfer from '%s', "
-                 "but it is impossible to select State Transfer donor: %s"
-                 "%s",
-                 joiner_idx, group->nodes[joiner_idx].segment,
-                 group->nodes[joiner_idx].name,
-                 required_donor ? donor_string : "*any*", strerror (-donor_idx),
-                 donor_ip_addr_err_msg);
-#else
-        gu_warn ("Member %d.%d (%s) requested state transfer from '%s', "
-                 "but it is impossible to select State Transfer donor: %s",
-                 joiner_idx, group->nodes[joiner_idx].segment,
-                 group->nodes[joiner_idx].name,
-                 required_donor ? donor_string : "*any*", strerror (-donor_idx));
-#endif /* PXC */
-||||||| 0bc393fb
-    else {
-        gu_warn ("Member %d.%d (%s) requested state transfer from '%s', "
-                 "but it is impossible to select State Transfer donor: %s",
-                 joiner_idx, group->nodes[joiner_idx].segment,
-                 group->nodes[joiner_idx].name,
-                 required_donor ? donor_string : "*any*", strerror (-donor_idx));
-=======
     else if (-donor_idx == EAGAIN) {
         /* In case of EAGAIN the failure of selecting the donor is
          * transient, and donor selection may succeed when the request is
@@ -2012,13 +1954,28 @@ group_select_donor (gcs_group_t* group,
                 required_donor ? donor_string : "*any*",
                 gcs_state_transfer_error_str(-donor_idx));
     } else {
+#ifdef PXC
+        const char* donor_ip_addr_err_msg = "";
+        if (donor_string && ip_address_present(donor_string)) {
+           donor_ip_addr_err_msg = " (Check for use of IP address in"
+                                   " wsrep_sst_donor. wsrep_sst_donor"
+                                   " expects node name only.)";
+        }
+        gu_warn ("Member %d.%d (%s) requested state transfer from '%s', "
+                 "but it is impossible to select State Transfer donor: %s"
+                 "%s",
+                 joiner_idx, group->nodes[joiner_idx].segment,
+                 group->nodes[joiner_idx].name,
+                 required_donor ? donor_string : "*any*", gcs_state_transfer_error_str(-donor_idx),
+                 donor_ip_addr_err_msg);
+#else
         gu_warn("Member %d.%d (%s) requested state transfer from '%s', "
                 "but it is impossible to select State Transfer donor: %s",
                 joiner_idx, group->nodes[joiner_idx].segment,
                 group->nodes[joiner_idx].name,
                 required_donor ? donor_string : "*any*",
                 gcs_state_transfer_error_str(-donor_idx));
->>>>>>> release_26.4.20
+#endif /* PXC */
     }
 
     return donor_idx;

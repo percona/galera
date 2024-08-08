@@ -1302,7 +1302,7 @@ out:
     assert (recv_act->sender_idx >= 0 ||
             recv_act->act.type   != GCS_ACT_WRITESET);
 
-    gu_debug ("Returning %d", ret);
+    gu_debug ("Returning %ld", ret);
 
     if (gu_unlikely(ret < 0)) {
         assert (recv_act->id < 0);

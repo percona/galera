@@ -506,16 +506,8 @@ void gu::AsioStreamReact::complete_server_handshake(
                           handler);
         break;
     case AsioStreamEngine::error:
-<<<<<<< HEAD
-        log_warn << "Handshake failed: " << engine_->last_error();
-        [[fallthrough]];
-||||||| 0bc393fb
-        log_warn << "Handshake failed: " << engine_->last_error();
-        // Fall through
-=======
         handler->connect_handler(*this, engine_->last_error());
         break;
->>>>>>> release_26.4.20
     case AsioStreamEngine::eof:
         handler->connect_handler(*this, AsioErrorCode::make_eof());
         break;
