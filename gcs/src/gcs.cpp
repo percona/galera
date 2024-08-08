@@ -519,18 +519,20 @@ static inline bool
 gcs_fc_stop_begin (gcs_conn_t* conn)
 {
     long err = 0;
-
-    bool ret = (conn->stop_count <= 0                                     &&
+    bool ret = (!(err = gu_mutex_lock (&conn->fc_lock))                   &&
+                conn->stop_count <= 0                                     &&
                 conn->stop_sent_ <= 0                                     &&
                 conn->queue_len  >  (conn->upper_limit + conn->fc_offset) &&
-                conn->state      <= conn->max_fc_state                    &&
-                !(err = gu_mutex_lock (&conn->fc_lock)));
+                conn->state      <= conn->max_fc_state);
 
     if (gu_unlikely(err)) {
             gu_fatal ("Mutex lock failed: %d (%s)", err, strerror(err));
             abort();
     }
 
+    if (!ret) {
+        gu_mutex_unlock(&conn->fc_lock);
+    }
     return ret;
 }
 
@@ -552,11 +554,20 @@ gcs_fc_stop_end (gcs_conn_t* conn)
     if (conn->stop_sent() <= 0)
     {
         conn->stop_sent_inc(1);
-        gu_mutex_unlock (&conn->fc_lock);
+
+        /*
+          We need to serialize gcs_recv_thread and wsrep_replication_thread here.
+          Let's say we decided above to send STOP, incremented stop_sent and released fc_lock
+          and didn't get to gcs_send_fc_event() yet.
+          Now wsrep_replication_thread processes gcs_fc_cont_end, where it check for stop_sent > 0
+          decrements it, releases fc_lock and sends CONT. It goes first in the queue, then we
+          continue here and STOP goes to the queue.
+          As the messages are swapped, the STOP has no corresponding CONT following and nodes
+          stuck waiting for CONT.
+        */
 
         ret = gcs_send_fc_event (conn, GCS_FC_STOP);
 
-        gu_mutex_lock (&conn->fc_lock);
         if (ret >= 0) {
             ret = 0;
             conn->stats_fc_stop_sent++;
@@ -591,16 +602,19 @@ gcs_fc_cont_begin (gcs_conn_t* conn)
     bool queue_decreased = (conn->fc_offset > conn->queue_len &&
                             (conn->fc_offset = conn->queue_len, true));
 
-    bool ret = (conn->stop_sent_  >  0                                    &&
+    bool ret = (!(err = gu_mutex_lock (&conn->fc_lock))                   &&
+                conn->stop_sent_  >  0                                    &&
                 (conn->lower_limit >= conn->queue_len || queue_decreased) &&
-                conn->state        <= conn->max_fc_state                  &&
-                !(err = gu_mutex_lock (&conn->fc_lock)));
+                conn->state        <= conn->max_fc_state);
 
     if (gu_unlikely(err)) {
         gu_fatal ("Mutex lock failed: %d (%s)", err, strerror(err));
         abort();
     }
 
+    if (!ret) {
+        gu_mutex_unlock(&conn->fc_lock);
+    }
     return ret;
 }
 
@@ -620,11 +634,9 @@ gcs_fc_cont_end (gcs_conn_t* conn)
     if (conn->stop_sent())
     {
         conn->stop_sent_dec(1);
-        gu_mutex_unlock (&conn->fc_lock);
 
         ret = gcs_send_fc_event (conn, GCS_FC_CONT);
 
-        gu_mutex_lock (&conn->fc_lock);
         if (gu_likely (ret >= 0)) {
             ret = 0;
             conn->stats_fc_cont_sent++;
