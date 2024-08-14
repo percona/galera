@@ -296,10 +296,8 @@ private:
             last_verify_error_ = SSL_get_verify_result(ssl_);
             return error;
         }
-#if (OPENSSL_VERSION_NUMBER >= 0x30000000L)
         case SSL_ERROR_ZERO_RETURN:
             return eof;
-#endif // (OPENSSL_VERSION_NUMBER >= 0x30000000L)
         }
         assert(0);
         return error;
