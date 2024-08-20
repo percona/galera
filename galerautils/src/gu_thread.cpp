@@ -74,7 +74,7 @@ gu::ThreadSchedparam gu::thread_get_schedparam(pthread_t thd)
     int err;
     if ((err = pthread_getschedparam(thd, &policy, &sp)) != 0)
     {
-        gu_throw_error(err) << "Failed to read thread schedparams";
+        gu_throw_system_error(err) << "Failed to read thread schedparams";
     }
     return ThreadSchedparam(policy, sp.sched_priority);
 }
@@ -102,7 +102,8 @@ void gu::thread_set_schedparam(pthread_t thd, const gu::ThreadSchedparam& sp)
         }
         else
         {
-            gu_throw_error(err) << "Failed to set thread schedparams " << sp;
+            gu_throw_system_error(err)
+                << "Failed to set thread schedparams " << sp;
         }
     }
 }

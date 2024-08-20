@@ -1,4 +1,4 @@
-/* Copyright (C) 2013-2018 Codership Oy <info@codership.com>
+/* Copyright (C) 2013-2024 Codership Oy <info@codership.com>
  *
  * $Id$
  */
@@ -19,10 +19,10 @@ class TestKey
 {
 public:
 
-    TestKey (int a, int  ver,
-             wsrep_key_type_t type,
-             std::vector<const char*> parts,
-             bool        copy = true)
+    TestKey (int  const ver,
+             wsrep_key_type_t const type,
+             std::vector<const char*> const parts,
+             bool        const copy = true)
         :
         parts_    (),
         ver_      (ver),
@@ -39,19 +39,19 @@ public:
         }
     }
 
-    TestKey (int         ver,
-             wsrep_key_type_t type,
-             bool        copy,
-             const char* part0,
-             const char* part1 = 0,
-             const char* part2 = 0,
-             const char* part3 = 0,
-             const char* part4 = 0,
-             const char* part5 = 0,
-             const char* part6 = 0,
-             const char* part7 = 0,
-             const char* part8 = 0,
-             const char* part9 = 0
+    TestKey (int         const ver,
+             wsrep_key_type_t const type,
+             bool        const copy,
+             const char* const part0,
+             const char* const part1 = 0,
+             const char* const part2 = 0,
+             const char* const part3 = 0,
+             const char* const part4 = 0,
+             const char* const part5 = 0,
+             const char* const part6 = 0,
+             const char* const part7 = 0,
+             const char* const part8 = 0,
+             const char* const part9 = 0
         )
         :
         parts_    (),

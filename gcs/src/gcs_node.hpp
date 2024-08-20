@@ -115,9 +115,11 @@ gcs_node_set_last_applied (gcs_node_t* node, gcs_seqno_t seqno)
 {
     assert(seqno >= 0);
     if (gu_unlikely(seqno <= node->last_applied)) {
-        gu_warn ("Received bogus LAST message: %lld from node %s, "
-                 "expected > %lld. Ignoring.",
-                 (long long)seqno, node->id, (long long)node->last_applied);
+        if (node->count_last_applied) {
+            gu_warn("Received bogus LAST message: %lld from node %s, "
+                    "expected > %lld. Ignoring.",
+                    (long long)seqno, node->id, (long long)node->last_applied);
+        }
     }
     else {
         node->last_applied = seqno;
@@ -125,7 +127,8 @@ gcs_node_set_last_applied (gcs_node_t* node, gcs_seqno_t seqno)
 }
 
 extern void
-gcs_node_set_vote (gcs_node_t* node, gcs_seqno_t seqno, int64_t vote);
+gcs_node_set_vote (gcs_node_t* node, gcs_seqno_t seqno, int64_t vote,
+                   int gcs_ptoto);
 
 static inline gcs_seqno_t
 gcs_node_get_last_applied (gcs_node_t* node)

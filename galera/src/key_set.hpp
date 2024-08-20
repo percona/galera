@@ -724,6 +724,7 @@ private:
     KeySet::Version       version_;
     int                   ws_ver_;
 
+    int find_common_ancestor_with_previous(const KeyData&) const;
     static gu::RecordSet::CheckType
     check_type (KeySet::Version ver)
     {

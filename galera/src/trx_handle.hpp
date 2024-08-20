@@ -1,5 +1,5 @@
 //
-// Copyright (C) 2010-2018 Codership Oy <info@codership.com>
+// Copyright (C) 2010-2024 Codership Oy <info@codership.com>
 //
 
 
@@ -859,19 +859,6 @@ namespace galera
 
         void append_key(const KeyData& key)
         {
-            // Current limitations with certification on trx versions 3 to 5
-            // impose the the following restrictions on keys
-
-            // The shared key behavior for TOI operations is completely
-            // untested, so don't allow it (and it probably does not even
-            // make any sense)
-            assert(is_toi()        == false
-                   || key.shared() == false
-                   || (key.parts_num == 1
-                       && key.parts->len == 1
-                       /* this could be a server-level key */)
-                );
-
             /*! protection against protocol change during trx lifetime */
             if (key.proto_ver != version())
             {

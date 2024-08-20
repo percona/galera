@@ -7,6 +7,7 @@
 #include "gcs_node.hpp"
 #include "gcs_state_msg.hpp"
 #include <stdlib.h>
+#include <cinttypes>
 
 #include <gu_utils.hpp> // gu::PrintBase
 
@@ -131,18 +132,25 @@ gcs_node_record_state (gcs_node_t* node, gcs_state_msg_t* state_msg)
 void
 gcs_node_set_vote (gcs_node_t* const node,
                    gcs_seqno_t const seqno,
-                   int64_t     const vote)
+                   int64_t     const vote,
+                   int         const gcs_proto)
 {
     assert(0 == vote || seqno >= node->last_applied);
     assert(seqno > node->vote_seqno);
 
-    gcs_seqno_t const min_seqno(std::max(node->last_applied, node->vote_seqno));
+    gcs_seqno_t const min_seqno =
+        gcs_proto >= 4
+        ? node->vote_seqno
+        : std::max(node->last_applied, node->vote_seqno);
 
     if (gu_unlikely(seqno <= min_seqno)) {
         gu_warn ("Received bogus VOTE message: %lld.%0llx, from node %s, "
                  "expected > %lld. Ignoring.",
                  (long long)seqno, (long long)vote, node->id,
                  (long long)min_seqno);
+        /* we should not be here: gcs_group_handle_vote_msg() should have
+         * taken care of it. */
+        assert(0);
     }
     else {
         node->vote_seqno = seqno;
@@ -185,10 +193,10 @@ gcs_node_update_status (gcs_node_t* node, const gcs_state_quorum_t* quorum)
             else {
                 // gap in sequence numbers, needs a snapshot, demote status
                 if (node->status > GCS_NODE_STATE_PRIM) {
-                    gu_info ("'%s' demoted %s->PRIMARY due to gap in history: "
-                             "%lld - %lld",
-                             node->name, gcs_node_state_to_str(node->status),
-                             node_act_id, quorum->act_id);
+                    gu_info("'%s' demoted %s->PRIMARY due to gap in history: "
+                            "%" PRId64 " - %" PRId64,
+                            node->name, gcs_node_state_to_str(node->status),
+                            node_act_id, quorum->act_id);
                 }
                 node->status = GCS_NODE_STATE_PRIM;
             }

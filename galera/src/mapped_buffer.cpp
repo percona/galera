@@ -88,29 +88,23 @@ void galera::MappedBuffer::reserve(size_t sz)
             fd_ = mkstemp(&file_[0]);
             if (fd_ == -1)
             {
-                gu_throw_error(errno) << "mkstemp(" << file_ << ") failed";
+                gu_throw_system_error(errno)
+                    << "mkstemp(" << file_ << ") failed";
             }
             if (ftruncate(fd_, sz) == -1)
             {
-                gu_throw_error(errno) << "ftruncate() failed";
+                gu_throw_system_error(errno) << "ftruncate() failed";
             }
             byte_t* tmp(reinterpret_cast<byte_t*>(
                             mmap(NULL, sz, PROT_READ | PROT_WRITE, MAP_PRIVATE,
                                  fd_, 0)));
             if (tmp == MAP_FAILED)
             {
-#ifdef PXC
-                int dummy_errno = errno;
+                const int error = errno;
                 free(buf_);
                 buf_ = 0;
                 clear();
-                gu_throw_error(dummy_errno) << "mmap() failed";
-#else
-                free(buf_);
-                buf_ = 0;
-                clear();
-                gu_throw_error(ENOMEM) << "mmap() failed";
-#endif /* PXC */
+                gu_throw_system_error(error) << "mmap() failed";
             }
             copy(buf_, buf_ + buf_size_, tmp);
             free(buf_);
@@ -120,26 +114,20 @@ void galera::MappedBuffer::reserve(size_t sz)
         {
             if (munmap(buf_, real_buf_size_) != 0)
             {
-                gu_throw_error(errno) << "munmap() failed";
+                gu_throw_system_error(errno) << "munmap() failed";
             }
             if (ftruncate(fd_, sz) == -1)
             {
-                gu_throw_error(errno) << "fruncate() failed";
+                gu_throw_system_error(errno) << "fruncate() failed";
             }
             byte_t* tmp(reinterpret_cast<byte_t*>(
                             mmap(NULL, sz, PROT_READ | PROT_WRITE, MAP_PRIVATE, fd_, 0)));
             if (tmp == MAP_FAILED)
             {
-#ifdef PXC
-                int dummy_errno = errno;
+                const int error = errno;
                 buf_ = 0;
                 clear();
-                gu_throw_error(dummy_errno) << "mmap() failed";
-#else
-                buf_ = 0;
-                clear();
-                gu_throw_error(ENOMEM) << "mmap() failed";
-#endif /* PXC */
+                gu_throw_system_error(error) << "mmap() failed";
             }
             buf_ = tmp;
         }
@@ -151,9 +139,9 @@ void galera::MappedBuffer::reserve(size_t sz)
         if (tmp == 0)
         {
 #ifdef PXC
-            gu_throw_error(errno) << "realloc failed";
+            gu_throw_system_error(errno) << "realloc failed";
 #else
-            gu_throw_error(ENOMEM) << "realloc failed";
+            gu_throw_system_error(ENOMEM) << "realloc failed";
 #endif /* PXC */
         }
         buf_ = tmp;

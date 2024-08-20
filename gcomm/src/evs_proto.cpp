@@ -674,7 +674,7 @@ void gcomm::evs::Proto::isolate(gu::datetime::Period period)
 void gcomm::evs::Proto::handle_install_timer()
 {
     gcomm_assert(state() == S_GATHER || state() == S_INSTALL);
-    log_warn << self_string() << " install timer expired";
+    log_info << self_string() << " install timer expired";
 
     bool is_cons(consensus_.is_consensus());
     bool is_repr(is_representative(uuid()));
@@ -2304,7 +2304,7 @@ void gcomm::evs::Proto::handle_foreign(const Message& msg)
     // a join message from joining node. This is to reduce the probability
     // of install timeouts because of already ongoing cluster configuration
     // changes.
-    const auto is_join_message_with_self
+    const bool is_join_message_with_self
         = msg.type() == Message::EVS_T_JOIN
           && msg.node_list().find(my_uuid_) != msg.node_list().end();
     if (state() == S_JOINING && not is_join_message_with_self)
@@ -2631,7 +2631,6 @@ int gcomm::evs::Proto::handle_down(Datagram& wb, const ProtoDownMeta& dm)
 
     else if (state() != S_OPERATIONAL)
     {
-        log_warn << "user message in state " << to_string(state());
         return ENOTCONN;
     }
 
