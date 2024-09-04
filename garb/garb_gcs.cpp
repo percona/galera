@@ -123,7 +123,7 @@ Gcs::request_state_transfer (const std::string& request,
     {
         log_fatal << "State transfer request failed: " << ret
                   << " (" << strerror(-ret) << ")";
-        gu_throw_error(-ret) << "State transfer request failed";
+        gu_throw_system_error(-ret) << "State transfer request failed";
     }
 
     return ret;
