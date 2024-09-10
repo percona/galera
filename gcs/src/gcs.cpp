@@ -2029,14 +2029,14 @@ long gcs_destroy (gcs_conn_t *conn)
     gu_cond_destroy (&tmp_cond);
     gcs_sm_destroy (conn->sm);
 
-    if ((err = gcs_fifo_lite_destroy (conn->repl_q))) {
+    if ((err = gcs_fifo_lite_destroy (conn->repl_q)))
+    {
         gu_debug ("Error destroying repl FIFO: %ld (%s)", err, strerror(-err));
-        return err;
     }
 
-    if ((err = gcs_core_destroy (conn->core))) {
-        gu_debug ("Error destroying core: %ld (%s)", err, strerror(-err));
-        return err;
+    if ((err = gcs_core_close(conn->core)))
+    {
+        gu_debug ("Failed to close GCS: error: %ld (%s)",-err, strerror(-err));
     }
 
     /* gcs_core_destory() cleans up many other things along with destroying the
