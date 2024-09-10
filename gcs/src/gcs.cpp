@@ -1314,8 +1314,16 @@ static long
 gcs_handle_state_change (gcs_conn_t*           conn,
                          const struct gcs_act* act)
 {
-    gu_debug ("Got '%s' dated %" PRId64, gcs_act_type_to_str (act->type),
+<<<<<<< HEAD
+    gu_debug ("Got '%s' dated %lld", gcs_act_type_to_str (act->type),
               gcs_seqno_gtoh(*(const gcs_seqno_t*)act->buf));
+||||||| 0bc393fb
+    gu_debug ("Got '%s' dated %lld", gcs_act_type_to_str (act->type),
+              gcs_seqno_gtoh(*(gcs_seqno_t*)act->buf));
+=======
+    gu_debug ("Got '%s' dated %" PRId64, gcs_act_type_to_str (act->type),
+              gcs_seqno_gtoh(*(gcs_seqno_t*)act->buf));
+>>>>>>> release_26.4.20
 
     void* buf = malloc (act->buf_len);
 
@@ -1877,7 +1885,8 @@ static void *gcs_recv_thread (void *arg)
         gcs_shift_state (conn, GCS_CONN_CLOSED);
 #endif /* PXC */
     }
-    gu_info ("RECV thread exiting %zd: %s", ret, strerror(-ret));
+<<<<<<< HEAD
+    gu_info ("RECV thread exiting %d: %s", ret, strerror(-ret));
 
 #ifdef PXC
 #ifdef HAVE_PSI_INTERFACE
@@ -1888,6 +1897,11 @@ static void *gcs_recv_thread (void *arg)
 #endif /* HAVE_PSI_INTERFACE */
 #endif /* PXC */
 
+||||||| 0bc393fb
+    gu_info ("RECV thread exiting %d: %s", ret, strerror(-ret));
+=======
+    gu_info ("RECV thread exiting %zd: %s", ret, strerror(-ret));
+>>>>>>> release_26.4.20
     return NULL;
 }
 
@@ -2029,14 +2043,34 @@ long gcs_destroy (gcs_conn_t *conn)
     gu_cond_destroy (&tmp_cond);
     gcs_sm_destroy (conn->sm);
 
+<<<<<<< HEAD
+    if ((err = gcs_fifo_lite_destroy (conn->repl_q)))
+    {
+        gu_debug ("Error destroying repl FIFO: %ld (%s)", err, strerror(-err));
+||||||| 0bc393fb
+    if ((err = gcs_fifo_lite_destroy (conn->repl_q))) {
+        gu_debug ("Error destroying repl FIFO: %d (%s)", err, strerror(-err));
+        return err;
+=======
     if ((err = gcs_fifo_lite_destroy (conn->repl_q))) {
         gu_debug ("Error destroying repl FIFO: %ld (%s)", err, strerror(-err));
         return err;
+>>>>>>> release_26.4.20
     }
 
+<<<<<<< HEAD
+    if ((err = gcs_core_close(conn->core)))
+    {
+        gu_debug ("Failed to close GCS: error: %ld (%s)",-err, strerror(-err));
+||||||| 0bc393fb
+    if ((err = gcs_core_destroy (conn->core))) {
+        gu_debug ("Error destroying core: %d (%s)", err, strerror(-err));
+        return err;
+=======
     if ((err = gcs_core_destroy (conn->core))) {
         gu_debug ("Error destroying core: %ld (%s)", err, strerror(-err));
         return err;
+>>>>>>> release_26.4.20
     }
 
     /* gcs_core_destory() cleans up many other things along with destroying the

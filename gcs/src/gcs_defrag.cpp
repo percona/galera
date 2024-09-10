@@ -94,10 +94,20 @@ gcs_defrag_handle_frag (gcs_defrag_t*         df,
             }
             else {
                 gu_error ("Unordered fragment received. Protocol error.");
+<<<<<<< HEAD
+                gu_error ("Expected: %llu:%ld, received: %llu:%ld",
+                          df->sent_id, df->frag_no, frg->act_id, frg->frag_no);
+                gu_error ("Contents: '%.*s'", frg->frag_len, (const char*)frg->frag);
+||||||| 0bc393fb
+                gu_error ("Expected: %llu:%ld, received: %llu:%ld",
+                          df->sent_id, df->frag_no, frg->act_id, frg->frag_no);
+                gu_error ("Contents: '%.*s'", frg->frag_len, (char*)frg->frag);
+=======
                 gu_error("Expected: %" PRId64 ":%ld, received: %" PRId64 ":%ld",
                          df->sent_id, df->frag_no, frg->act_id, frg->frag_no);
                 gu_error("Contents: '%.*s'", static_cast<int>(frg->frag_len),
-                         (const char*)frg->frag);
+                         (char*)frg->frag);
+>>>>>>> release_26.4.20
                 df->frag_no--; // revert counter in hope that we get good frag
                 assert(0);
                 return -EPROTO;
@@ -133,11 +143,25 @@ gcs_defrag_handle_frag (gcs_defrag_t*         df,
             else {
                 (static_cast<char*>(const_cast<void*>(frg->frag)))[frg->frag_len - 1] = '\0';
                 gu_error ("Unordered fragment received. Protocol error.");
+<<<<<<< HEAD
+                gu_error ("Expected: any:0(first), received: %lld:%ld",
+                          frg->act_id, frg->frag_no);
+                gu_error ("Contents: '%s', local: %s, reset: %s",
+                          (const char*)frg->frag, local ? "yes" : "no",
+                          df->reset ? "yes" : "no");
+||||||| 0bc393fb
+                gu_error ("Expected: any:0(first), received: %lld:%ld",
+                          frg->act_id, frg->frag_no);
+                gu_error ("Contents: '%s', local: %s, reset: %s",
+                          (char*)frg->frag, local ? "yes" : "no",
+                          df->reset ? "yes" : "no");
+=======
                 gu_error("Expected: any:0(first), received: %" PRId64 ":%lu",
                          frg->act_id, frg->frag_no);
                 gu_error("Contents: '%s', local: %s, reset: %s",
-                         (const char*)frg->frag, local ? "yes" : "no",
+                         (char*)frg->frag, local ? "yes" : "no",
                          df->reset ? "yes" : "no");
+>>>>>>> release_26.4.20
                 assert(0);
                 return -EPROTO;
             }

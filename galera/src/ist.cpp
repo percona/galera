@@ -466,8 +466,16 @@ void galera::ist::Receiver::run()
 
             if (act.seqno_g != current_seqno_)
             {
+<<<<<<< HEAD
+                log_error << "Unexpected action seqno: " << act.seqno_g
+                        << " expected: " << current_seqno_;
+||||||| 0bc393fb
+                log_error << "Unexpected action seqno: " << act.seqno_g
+                          << " expected: " << current_seqno_;
+=======
                 error_os << "Unexpected action seqno: " << act.seqno_g
                          << " expected: " << current_seqno_;
+>>>>>>> release_26.4.20
                 ec = EINVAL;
                 goto err;
             }

@@ -292,13 +292,19 @@ namespace galera
                 , processed_upto_(0)
 #endif /* PXC */
             { }
+<<<<<<< HEAD
 #ifdef PXC
             int is_eof() { return eof_; }
-            void reset() { eof_ = false; result_ = ist::Result{0, ""}; processed_upto_ = 0; }
-#else
-            void reset() { eof_ = false; result_ = ist::Result{0, ""}; }
 #endif /* PXC */
+            void reset() { eof_ = false; error_ = 0; processed_upto_ = 0;}
+            void eof(int error)
+||||||| 0bc393fb
+            void reset() { eof_ = false; error_ = 0; }
+            void eof(int error)
+=======
+            void reset() { eof_ = false; result_ = ist::Result{0, ""}; }
             void eof(const ist::Result& result)
+>>>>>>> release_26.4.20
             {
                 gu::Lock lock(mutex_);
                 eof_ = true;

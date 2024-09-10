@@ -1608,7 +1608,7 @@ namespace gcache
 
         chain_t chain(NONE);
         const uint8_t* chain_start(start_);
-        size_t count = 0;
+        size_t count;
 
         bool next(false);
         const uint8_t* ptr(start_);

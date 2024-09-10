@@ -25,7 +25,7 @@ public:
     std::string scheme() const GALERA_OVERRIDE
     {
         return "mock";
-    }
+    };
     void assign_fd(int fd) GALERA_OVERRIDE
     {
         fd_ = fd;
@@ -86,9 +86,8 @@ public:
         {
             return {eof, size_t(result)};
         }
-        else if (errno == EAGAIN)
+        else if (errno == EAGAIN || errno == EWOULDBLOCK)
         {
-            static_assert(EAGAIN == EWOULDBLOCK, "EAGAIN and EWOULDBLOCK are the same");
             last_error_ = errno;
             return {return_on_block, size_t(result)};
         }
@@ -1164,6 +1163,7 @@ static void write_key(EVP_PKEY* pkey, const std::string& filename)
 static void set_x509v3_extensions(X509* x509, X509* issuer, bool const is_ca)
 {
     auto* conf_bio = BIO_new(BIO_s_mem());
+    char extn[] = "extensions";
     std::string ext{ "[extensions]\n"
                      "authorityKeyIdentifier=keyid,issuer\n"
                      "subjectKeyIdentifier=hash\n" };
@@ -1192,9 +1192,15 @@ static void set_x509v3_extensions(X509* x509, X509* issuer, bool const is_ca)
     X509V3_CTX ctx;
     X509V3_set_ctx(&ctx, issuer ? issuer : x509, x509, nullptr, nullptr, 0);
     X509V3_set_nconf(&ctx, conf);
+<<<<<<< HEAD
+    if (!X509V3_EXT_add_nconf(conf, &ctx, extn, x509))
+||||||| 0bc393fb
+    if (!X509V3_EXT_add_nconf(conf, &ctx, (char *)"extensions", x509))
+=======
     char extensions[16];
     ::strncpy(extensions, "extensions", sizeof(extensions));
     if (!X509V3_EXT_add_nconf(conf, &ctx, extensions, x509))
+>>>>>>> release_26.4.20
     {
         throw_error("Could not add extension");
     }
@@ -1660,6 +1666,213 @@ END_TEST
 // Wsrep TLS service.
 //
 
+<<<<<<< HEAD
+class MockStreamEngine : public gu::AsioStreamEngine
+{
+public:
+    MockStreamEngine();
+
+    std::string scheme() const GALERA_OVERRIDE
+    {
+        return "mock";
+    }
+    void assign_fd(int fd) GALERA_OVERRIDE
+    {
+        fd_ = fd;
+    }
+
+    enum op_status client_handshake() GALERA_OVERRIDE
+    {
+        ++count_client_handshake_called;
+        last_error_ = next_error;
+        return next_result;
+    }
+
+    enum op_status server_handshake() GALERA_OVERRIDE
+    {
+        log_info << "MockWsrepTlsService::server_handshake";
+        ++count_server_handshake_called;
+        last_error_ = next_error;
+        return next_result;
+    }
+
+    op_result read(void* buf, size_t max_count) GALERA_OVERRIDE
+    {
+        ++count_read_called;
+        ssize_t read_result(::recv(fd_, buf, max_count, 0));
+        return map_return_value(read_result, want_read);
+    }
+
+    op_result write(const void* buf, size_t count) GALERA_OVERRIDE
+    {
+        ++count_write_called;
+        ssize_t write_result(::send(fd_, buf, count, MSG_NOSIGNAL));
+        return map_return_value(write_result, want_write);
+    }
+
+    void shutdown() GALERA_OVERRIDE { }
+
+    gu::AsioErrorCode last_error() const GALERA_OVERRIDE
+    {
+        return last_error_;
+    }
+
+    op_result map_return_value(ssize_t result,
+                               enum op_status return_on_block)
+    {
+        if (next_result != success)
+        {
+            last_error_ = next_error;
+            return {next_result, size_t(result)};
+        }
+
+        if (result > 0)
+        {
+            return {success, size_t(result)};
+        }
+        else if (result == 0)
+        {
+            return {eof, size_t(result)};
+        }
+        else if (errno == EAGAIN)
+        {
+            static_assert(EAGAIN == EWOULDBLOCK, "EAGAIN and EWOULDBLOCK are the same");
+            last_error_ = errno;
+            return {return_on_block, size_t(result)};
+        }
+        else
+        {
+            last_error_ = next_error;
+            return {error, size_t(result)};
+        }
+    }
+
+    enum op_status next_result;
+    int next_error;
+    size_t count_client_handshake_called;
+    size_t count_server_handshake_called;
+    size_t count_read_called;
+    size_t count_write_called;
+
+private:
+    int fd_;
+    int last_error_;
+};
+
+MockStreamEngine::MockStreamEngine()
+    : next_result(success)
+    , next_error()
+    , count_client_handshake_called()
+    , count_server_handshake_called()
+    , count_read_called()
+    , count_write_called()
+    , fd_()
+    , last_error_()
+{ }
+||||||| 0bc393fb
+class MockStreamEngine : public gu::AsioStreamEngine
+{
+public:
+    MockStreamEngine();
+
+    std::string scheme() const GALERA_OVERRIDE
+    {
+        return "mock";
+    };
+    void assign_fd(int fd) GALERA_OVERRIDE
+    {
+        fd_ = fd;
+    }
+
+    enum op_status client_handshake() GALERA_OVERRIDE
+    {
+        ++count_client_handshake_called;
+        last_error_ = next_error;
+        return next_result;
+    }
+
+    enum op_status server_handshake() GALERA_OVERRIDE
+    {
+        log_info << "MockWsrepTlsService::server_handshake";
+        ++count_server_handshake_called;
+        last_error_ = next_error;
+        return next_result;
+    }
+
+    op_result read(void* buf, size_t max_count) GALERA_OVERRIDE
+    {
+        ++count_read_called;
+        ssize_t read_result(::recv(fd_, buf, max_count, 0));
+        return map_return_value(read_result, want_read);
+    }
+
+    op_result write(const void* buf, size_t count) GALERA_OVERRIDE
+    {
+        ++count_write_called;
+        ssize_t write_result(::send(fd_, buf, count, MSG_NOSIGNAL));
+        return map_return_value(write_result, want_write);
+    }
+
+    void shutdown() GALERA_OVERRIDE { }
+
+    gu::AsioErrorCode last_error() const GALERA_OVERRIDE
+    {
+        return last_error_;
+    }
+
+    op_result map_return_value(ssize_t result,
+                               enum op_status return_on_block)
+    {
+        if (next_result != success)
+        {
+            last_error_ = next_error;
+            return {next_result, size_t(result)};
+        }
+
+        if (result > 0)
+        {
+            return {success, size_t(result)};
+        }
+        else if (result == 0)
+        {
+            return {eof, size_t(result)};
+        }
+        else if (errno == EAGAIN || errno == EWOULDBLOCK)
+        {
+            last_error_ = errno;
+            return {return_on_block, size_t(result)};
+        }
+        else
+        {
+            last_error_ = next_error;
+            return {error, size_t(result)};
+        }
+    }
+
+    enum op_status next_result;
+    int next_error;
+    size_t count_client_handshake_called;
+    size_t count_server_handshake_called;
+    size_t count_read_called;
+    size_t count_write_called;
+
+private:
+    int fd_;
+    int last_error_;
+};
+
+MockStreamEngine::MockStreamEngine()
+    : next_result(success)
+    , next_error()
+    , count_client_handshake_called()
+    , count_server_handshake_called()
+    , count_read_called()
+    , count_write_called()
+    , fd_()
+    , last_error_()
+{ }
+=======
+>>>>>>> release_26.4.20
 
 struct TlsServiceClientTestFixture
 {
