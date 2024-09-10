@@ -9,12 +9,8 @@
 #include "GCache.hpp"
 #include "gu_config.hpp"
 #include "gu_inttypes.hpp"
-<<<<<<< HEAD
 #include "gu_init.h"
-||||||| 0bc393fb
-=======
 #include "test_key.hpp"
->>>>>>> release_26.4.20
 
 #include <check.h>
 
@@ -660,7 +656,7 @@ struct CertFixture
     galera::ProgressCallback<int64_t> gcache_pcb{WSREP_MEMBER_UNDEFINED,
         WSREP_MEMBER_UNDEFINED};
     gcache::GCache gcache{&gcache_pcb, conf, "."};
-    galera::Certification cert{conf, 0};
+    galera::Certification cert{conf, 0, &gcache};
     int version = galera::WriteSetNG::MAX_VERSION;
     CertFixture() {
         cert.assign_initial_position(gu::GTID(), version);

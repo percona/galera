@@ -54,16 +54,8 @@ gu_log (gu_log_severity_t severity,
         const char*       file,
         const char*       function,
         const int         line,
-<<<<<<< HEAD
-        const char*       format,
-        ...)
-       __attribute__((format (printf, 5, 0)));
-||||||| 0bc393fb
-        ...);
-=======
         const char*       fmt,
         ...) __attribute__((format(printf, 5, 6)));
->>>>>>> release_26.4.20
 
 /** This variable is made global only for the purpose of using it in
  *  gu_debug() macro and avoid calling gu_log() when debug is off.

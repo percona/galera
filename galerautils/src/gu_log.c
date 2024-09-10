@@ -135,12 +135,7 @@ gu_log (gu_log_severity_t severity,
         const char*       file,
         const char*       function,
         const int         line,
-<<<<<<< HEAD
-        const char*       format,
-||||||| 0bc393fb
-=======
         const char*       fmt,
->>>>>>> release_26.4.20
         ...)
 {
     va_list ap;
@@ -171,26 +166,10 @@ gu_log (gu_log_severity_t severity,
 
         str += len;
         max_string -= len;
-<<<<<<< HEAD
-        va_start (ap, format);
-||||||| 0bc393fb
-        va_start (ap, line);
-=======
         va_start (ap, fmt);
->>>>>>> release_26.4.20
         {
-<<<<<<< HEAD
-            if (gu_likely(max_string > 0 && NULL != format)) {
-                vsnprintf (str, max_string, format, ap);
-||||||| 0bc393fb
-            const char* format = va_arg (ap, const char*);
-
-            if (gu_likely(max_string > 0 && NULL != format)) {
-                vsnprintf (str, max_string, format, ap);
-=======
             if (gu_likely(max_string > 0 && NULL != fmt)) {
                 vsnprintf (str, max_string, fmt, ap);
->>>>>>> release_26.4.20
             }
         }
         va_end (ap);
