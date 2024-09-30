@@ -47,10 +47,7 @@ namespace
             {
                 conf.set("gcache.name", GCACHE_NAME);
                 conf.set("gcache.size", "1M");
-                gu_init(nullptr, [](wsrep_pfs_instr_type_t,
-                                    wsrep_pfs_instr_ops_t,
-                                    wsrep_pfs_instr_tag_t, void **,
-                                    void **, const void *) {});
+                gu_init(nullptr, nullptr);
             }
         }                                 init_;
         galera::ProgressCallback<int64_t> gcache_pcb_;
@@ -644,6 +641,7 @@ struct CertFixture
         {
             conf.set("gcache.name", "cert_fixture.cache");
             conf.set("gcache.size", "1M");
+            gu_init(nullptr, nullptr);  // initialize crc
         }
     } init_conf{conf};
 

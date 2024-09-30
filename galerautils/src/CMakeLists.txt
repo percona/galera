@@ -105,6 +105,7 @@ add_library(galerautilsxx STATIC
   gu_debug_sync.cpp
   gu_thread.cpp
   gu_uuid.cpp
+  gu_pfs.cpp
   )
 
 # TODO: Warnings should be fixed.
