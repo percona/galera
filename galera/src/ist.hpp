@@ -26,6 +26,8 @@ namespace galera
 {
     namespace ist
     {
+        class Proto;
+
         void register_params(gu::Config& conf);
 
 
@@ -147,6 +149,8 @@ namespace galera
             void send(wsrep_seqno_t first, wsrep_seqno_t last,
                       wsrep_seqno_t preload_start);
 
+            void send_done(galera::ist::Proto& p);
+
             void cancel()
             {
                 socket_->close();
@@ -171,6 +175,7 @@ namespace galera
             int                                       version_;
             bool                                      use_ssl_;
             bool                                      terminated_;
+            bool                                      gcache_unlocked_;
 
             Sender(const Sender&);
             void operator=(const Sender&);
