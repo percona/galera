@@ -218,6 +218,7 @@ struct gcs_action {
     const void*    buf; /*! unlike input, output goes as a single buffer */
     int32_t        size;
     gcs_act_type_t type;
+    char           sender_id[GU_UUID_STR_LEN+1];
 };
 
 std::ostream& operator <<(std::ostream& os, const gcs_action& act);

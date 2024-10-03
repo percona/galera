@@ -14,6 +14,10 @@
 #include <boost/bind.hpp>
 #include <fstream>
 #include <algorithm>
+#include <chrono>
+#include <thread>
+#include <mutex>
+#include <condition_variable>
 
 namespace
 {
@@ -35,11 +39,13 @@ namespace galera
                         wsrep_seqno_t last,
                         wsrep_seqno_t preload_start,
                         AsyncSenderMap& asmap,
-                        int version)
+                        int version,
+                        const std::string& sender_id)
                 :
                 Sender (conf, asmap.gcache(), peer, version),
                 conf_  (conf),
                 peer_  (peer),
+                peer_id_ (sender_id),
                 first_ (first),
                 last_  (last),
                 preload_start_(preload_start),
@@ -49,6 +55,7 @@ namespace galera
 
             const gu::Config&  conf()   { return conf_;   }
             const std::string& peer()  const { return peer_;   }
+            const std::string& peer_id() const { return peer_id_;  }
             wsrep_seqno_t      first() const { return first_;  }
             wsrep_seqno_t      last()  const { return last_;   }
             wsrep_seqno_t      preload_start() const { return preload_start_; }
@@ -61,6 +68,7 @@ namespace galera
 
             const gu::Config&   conf_;
             std::string const   peer_;
+            std::string const   peer_id_;
             wsrep_seqno_t const first_;
             wsrep_seqno_t const last_;
             wsrep_seqno_t const preload_start_;
@@ -371,6 +379,107 @@ galera::ist::Receiver::prepare(wsrep_seqno_t const first_seqno,
     return recv_addr_;
 }
 
+class SocketWatchdog
+{
+    public:
+        explicit SocketWatchdog(std::function<void()> onExpire, unsigned int timeoutMs = 10000)
+            : eventCbFn_(onExpire)
+            , active_(false)
+            , alive_(true)
+            , restart_(true)
+            , expire_cnt_(timeoutMs/10)
+            , mtx_()
+            , cv_()
+            , t_([this]() {
+
+              bool aliveSnapshot = alive_;
+
+              while(aliveSnapshot) {
+                bool activeSnapshot;
+                bool restartSnapshot = false;
+                int counter;
+
+                // Wait for the trigger. (start, stop or destructor).
+                // Once triggered, collect current state of control flags.
+                {
+                  std::unique_lock<std::mutex> lock(mtx_);
+                  while(!active_) cv_.wait(lock);
+                  activeSnapshot = active_;
+                  aliveSnapshot = alive_;
+                  counter = expire_cnt_;
+
+                  // Here we do not capture restart_ because we just set up
+                  // fresh state of the watchdog.
+                  restart_ = false;
+                }
+
+                // Timer loop.
+                while (activeSnapshot && aliveSnapshot && !restartSnapshot) {
+                    if (counter == 0) {
+                        // Timeout expired. Call registered delegate and
+                        // deactivate the watchdog.
+                        eventCbFn_();
+
+                        std::unique_lock<std::mutex> lock(mtx_);
+                        active_ = false;
+                        break;
+                    }
+
+                    {
+                        // Watit for 10ms, than collect current state of
+                        // control flags.
+                        std::unique_lock<std::mutex> lock(mtx_);
+                        cv_.wait_for(lock, std::chrono::milliseconds(10));
+                        activeSnapshot = active_;
+                        aliveSnapshot = alive_;
+                        // If in the meantime, when we were not under lock,
+                        // stop-start sequence was called, it means we need
+                        // to restart the timer loop.
+                        restartSnapshot = restart_;
+                    }
+                    --counter;
+                }
+              }
+          }) { }
+
+        ~SocketWatchdog() {
+            {
+                std::unique_lock<std::mutex> lock(mtx_);
+                alive_ = false;
+                active_ = true;
+                cv_.notify_one();
+            }
+            t_.join();
+
+        }
+
+        void start() {
+            std::unique_lock<std::mutex> lock(mtx_);
+            active_ = true;
+            // Inform executor thread that watchdog was just started
+            // and it is necessary to restart timer loop.
+            restart_ = true;
+            cv_.notify_one();
+        }
+
+        void stop() {
+            std::unique_lock<std::mutex> lock(mtx_);
+            active_ = false;
+            cv_.notify_one();
+        }
+
+    private:
+        std::function<void()> eventCbFn_;
+        bool active_;
+        bool alive_;
+        bool restart_;
+        int expire_cnt_;
+        std::mutex mtx_;
+        std::condition_variable cv_;
+
+        std::thread t_;
+};
+
 void galera::ist::Receiver::run()
 {
     auto socket(acceptor_->accept());
@@ -416,10 +525,18 @@ void galera::ist::Receiver::run()
         bool preload_started(false);
         current_seqno_ = WSREP_SEQNO_UNDEFINED;
 
+        {
+            SocketWatchdog watchdog([&socket, this]() {
+                log_info << "SocketWatchdog expired";
+                socket->shut_down();
+            });
+
         while (true)
         {
             std::pair<gcs_action, bool> ret;
+            watchdog.start();
             p.recv_ordered(*socket, ret);
+            watchdog.stop();
 
             gcs_action& act(ret.first);
 
@@ -616,6 +733,7 @@ void galera::ist::Receiver::run()
                 assert(0);
             }
         }
+        }
         if (progress /* IST actually started */) progress->finish();
     }
     catch (gu::Exception& e)
@@ -736,7 +854,8 @@ galera::ist::Sender::Sender(const gu::Config&  conf,
     conf_      (conf),
     gcache_    (gcache),
     version_   (version),
-    use_ssl_   (false)
+    use_ssl_   (false),
+    terminated_(false)
 {
     gu::URI uri(peer);
     try
@@ -756,6 +875,7 @@ galera::ist::Sender::~Sender()
 {
     socket_->close();
     gcache_.seqno_unlock();
+    log_info << "IST sender unlocked gcache";
 }
 
 void send_eof(galera::ist::Proto& p, gu::AsioSocket& socket)
@@ -763,6 +883,8 @@ void send_eof(galera::ist::Proto& p, gu::AsioSocket& socket)
 
     p.send_ctrl(socket, galera::ist::Ctrl::C_EOF);
 
+    log_info << "IST sender sent EOF."
+             << " Waiting for joiner to close the connection";
     // wait until receiver closes the connection
     try
     {
@@ -777,6 +899,7 @@ void send_eof(galera::ist::Proto& p, gu::AsioSocket& socket)
     }
     catch (const gu::Exception& e)
     { }
+    log_info << "IST sender finished waiting for connection close";
 }
 
 void galera::ist::Sender::send(wsrep_seqno_t first, wsrep_seqno_t last,
@@ -896,8 +1019,13 @@ void* run_async_sender(void* arg)
     }
     catch (gu::Exception& e)
     {
-        log_error << "async IST sender failed to serve " << as->peer().c_str()
-                  << ": " << e.what();
+        if (as->terminated()) {
+            log_warn << "async IST sender was terminated and failed to serve "
+                      << as->peer().c_str();
+        } else {
+            log_error << "async IST sender failed to serve " << as->peer().c_str()
+                    << ": " << e.what();
+        }
         join_seqno = -e.get_errno();
     }
     catch (...)
@@ -936,11 +1064,12 @@ void galera::ist::AsyncSenderMap::run(const gu::Config&   conf,
                                       wsrep_seqno_t const first,
                                       wsrep_seqno_t const last,
                                       wsrep_seqno_t const preload_start,
-                                      int const           version)
+                                      int const           version,
+                                      const std::string&  sender_id)
 {
     gu::Critical crit(monitor_);
     AsyncSender* as(new AsyncSender(conf, peer, first, last, preload_start,
-                                    *this, version));
+                                    *this, version, sender_id));
     int err(gu_thread_create(&as->thread_, 0, &run_async_sender, as));
     if (err != 0)
     {
@@ -962,6 +1091,34 @@ void galera::ist::AsyncSenderMap::remove(AsyncSender* as, wsrep_seqno_t seqno)
     senders_.erase(i);
 }
 
+void galera::ist::AsyncSenderMap::terminate(const std::vector<std::string>& active_peers)
+{
+    gu::Critical crit(monitor_);
+    std::vector<AsyncSender*> senders_to_remove;
+    for(auto sender : senders_)
+    {
+        auto it = std::find(begin(active_peers), end(active_peers), sender->peer_id());
+        if (it == active_peers.end()) {
+            log_warn << "Peer (IST receiver) " << sender->peer_id().c_str()
+                     << " for IST AsyncSender seems to be disconnected."
+                     << " Terminating IST AsyncSender.\n",
+            senders_to_remove.push_back(sender);
+        }
+    }
+
+    for (auto sender : senders_to_remove) {
+        senders_.erase(sender);
+        int err;
+        sender->terminate();
+        monitor_.leave();
+        if ((err = gu_thread_join(sender->thread_, 0)) != 0)
+        {
+            log_warn << "thread_join() failed: " << err;
+        }
+        monitor_.enter();
+        delete sender;
+    }
+}
 
 void galera::ist::AsyncSenderMap::cancel()
 {

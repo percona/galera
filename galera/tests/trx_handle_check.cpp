@@ -174,7 +174,7 @@ START_TEST(test_serialization)
         TrxHandleSlavePtr txs1(TrxHandleSlave::New(false, sp),
                                TrxHandleSlaveDeleter());
         gcs_action const act =
-            { 1, 2, buf.data(), int(buf.size()), GCS_ACT_WRITESET};
+            { 1, 2, buf.data(), int(buf.size()), GCS_ACT_WRITESET, 0};
         ck_assert(txs1->unserialize<true>(act) > 0);
         ck_assert(txs1->global_seqno() == act.seqno_g);
         ck_assert(txs1->local_seqno()  == act.seqno_l);
@@ -241,7 +241,7 @@ START_TEST(test_streaming)
         TrxHandleSlavePtr ts(TrxHandleSlave::New(false, sp),
                              TrxHandleSlaveDeleter());
         gcs_action const act =
-            { 1, 2, buf.data(), int(buf.size()), GCS_ACT_WRITESET};
+            { 1, 2, buf.data(), int(buf.size()), GCS_ACT_WRITESET, 0};
         ck_assert(ts->unserialize<true>(act) > 0);
         ck_assert(ts->flags() & TrxHandle::F_BEGIN);
         ck_assert(!(ts->flags() & TrxHandle::F_COMMIT));
@@ -264,7 +264,7 @@ START_TEST(test_streaming)
         TrxHandleSlavePtr ts(TrxHandleSlave::New(false, sp),
                              TrxHandleSlaveDeleter());
         gcs_action const act =
-            { 2, 3, buf.data(), int(buf.size()), GCS_ACT_WRITESET};
+            { 2, 3, buf.data(), int(buf.size()), GCS_ACT_WRITESET, 0};
         ck_assert(ts->unserialize<true>(act) > 0);
         ck_assert(!(ts->flags() & TrxHandle::F_BEGIN));
         ck_assert(!(ts->flags() & TrxHandle::F_COMMIT));
@@ -288,7 +288,7 @@ START_TEST(test_streaming)
         TrxHandleSlavePtr ts(TrxHandleSlave::New(false, sp),
                              TrxHandleSlaveDeleter());
         gcs_action const act =
-            { 3, 4, buf.data(), int(buf.size()), GCS_ACT_WRITESET};
+            { 3, 4, buf.data(), int(buf.size()), GCS_ACT_WRITESET, 0};
         ck_assert(ts->unserialize<true>(act) > 0);
         ck_assert(!(ts->flags() & TrxHandle::F_BEGIN));
         ck_assert(ts->flags() & TrxHandle::F_COMMIT);

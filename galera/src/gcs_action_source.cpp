@@ -126,7 +126,7 @@ void galera::GcsActionSource::dispatch(void* const              recv_ctx,
         break;
     case GCS_ACT_STATE_REQ:
         gu_trace(replicator_.process_state_req(recv_ctx, act.buf, act.size,
-                                               act.seqno_l, act.seqno_g));
+                                               act.seqno_l, act.seqno_g, act.sender_id));
         break;
     case GCS_ACT_JOIN:
     {
