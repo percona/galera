@@ -31,10 +31,7 @@ START_TEST(test1)
 {
     // Initialize utils. Ring buffer needs CRC.
     // It is done by replicator constructor, but we use RB directly here.
-    gu_init(nullptr, [](wsrep_pfs_instr_type_t,
-                        wsrep_pfs_instr_ops_t,
-                        wsrep_pfs_instr_tag_t, void **,
-                        void **, const void *) {});             
+    gu_init(nullptr, nullptr);
 
     ::unlink(RB_NAME.c_str());
 
@@ -133,10 +130,7 @@ START_TEST(recovery)
 {
     // Initialize utils. Ring buffer needs CRC.
     // It is done by replicator constructor, but we use GCache directly here.
-    gu_init(nullptr, [](wsrep_pfs_instr_type_t,
-                        wsrep_pfs_instr_ops_t,
-                        wsrep_pfs_instr_tag_t, void **,
-                        void **, const void *) {});             
+    gu_init(nullptr, nullptr);
 
     struct msg
     {

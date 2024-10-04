@@ -52,7 +52,7 @@ START_TEST (gcs_proto_test)
 
     // write action to the buffer, it should not fit
     char* frg = static_cast<char*>(const_cast<void*>(frg_send.frag));
-    int cnt = std::min(strlen(frg)+1, frg_send.frag_len);
+    int cnt = std::min(strlen(act_send_ptr)+1, frg_send.frag_len);
     memcpy(frg, act_send_ptr, cnt);
     act_send_ptr += frg_send.frag_len;
 

@@ -47,10 +47,7 @@ namespace
             {
                 conf.set("gcache.name", GCACHE_NAME);
                 conf.set("gcache.size", "1M");
-                gu_init(nullptr, [](wsrep_pfs_instr_type_t,
-                                    wsrep_pfs_instr_ops_t,
-                                    wsrep_pfs_instr_tag_t, void **,
-                                    void **, const void *) {});
+                gu_init(nullptr, nullptr);
             }
         }                                 init_;
         galera::ProgressCallback<int64_t> gcache_pcb_;
@@ -311,9 +308,12 @@ START_TEST(test_certification_trx_different_level_v4)
           galera::KeyData::BRANCH_KEY_TYPE,
           Certification::TEST_FAILED, {0}, 0},
         // 2)
+        // 3 depends on 1 if optimistic_pa=yes
+        // for PXC, by defult optimistic_pa=no, so
+        // 3 depends on 2
         { { {2, } }, 2, 2,
           { {void_cast("1"), 1}, {void_cast("1"), 1} }, 2, false,
-          3, 3, 2, 1, TrxHandle::F_BEGIN | TrxHandle::F_COMMIT,
+          3, 3, 2, 2, TrxHandle::F_BEGIN | TrxHandle::F_COMMIT,
           galera::KeyData::BRANCH_KEY_TYPE,
           Certification::TEST_OK, {0}, 0},
         { { {1, } }, 1, 1,
@@ -644,6 +644,7 @@ struct CertFixture
         {
             conf.set("gcache.name", "cert_fixture.cache");
             conf.set("gcache.size", "1M");
+            gu_init(nullptr, nullptr);  // initialize crc
         }
     } init_conf{conf};
 

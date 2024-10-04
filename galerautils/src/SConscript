@@ -98,7 +98,8 @@ libgalerautilsxx_sources = [
     'gu_enc_utils.cpp',
     'gu_enc_debug.cpp',
     'gu_enc_pmemory_manager.cpp',
-    'gu_enc_pmemory_manager_pool.cpp'
+    'gu_enc_pmemory_manager_pool.cpp',
+    'gu_pfs.cpp'
 ]
 
 #libgalerautilsxx_objs  = libgalerautilsxx_env.Object(

@@ -22,10 +22,7 @@ namespace
                 conf.set("gcache.name", name_);
                 conf.set("gcache.size", "1M");
                 log_info << "conf for gcache: " << conf;
-                gu_init(nullptr, [](wsrep_pfs_instr_type_t,
-                                    wsrep_pfs_instr_ops_t,
-                                    wsrep_pfs_instr_tag_t, void **,
-                                    void **, const void *) {});             
+                gu_init(nullptr, nullptr);
             }
 
             ~GCache_setup()
