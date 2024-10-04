@@ -854,7 +854,8 @@ galera::ist::Sender::Sender(const gu::Config&  conf,
     gcache_    (gcache),
     version_   (version),
     use_ssl_   (false),
-    terminated_(false)
+    terminated_(false),
+    gcache_unlocked_(false)
 {
     gu::URI uri(peer);
     try
@@ -873,8 +874,14 @@ galera::ist::Sender::Sender(const gu::Config&  conf,
 galera::ist::Sender::~Sender()
 {
     socket_->close();
-    gcache_.seqno_unlock();
-    log_info << "IST sender unlocked gcache";
+
+    // Standard flow will call send_done after sending all IST writesets.
+    // This will unlock gcache. The following services the case when sending
+    // loop terminates abnormally (via exception)
+    if (!gcache_unlocked_) {
+        log_info << "IST sender finished. Unlocking GCache.";
+        gcache_.seqno_unlock();
+    }
 }
 
 void send_eof(galera::ist::Proto& p, gu::AsioSocket& socket)
@@ -899,6 +906,17 @@ void send_eof(galera::ist::Proto& p, gu::AsioSocket& socket)
     catch (const gu::Exception& e)
     { }
     log_info << "IST sender finished waiting for connection close";
+}
+
+void galera::ist::Sender::send_done(galera::ist::Proto& p)
+{
+    // We don't need GCache anymore. Request socket close from Joiner side,
+    // and wait for Joiner doing it,
+    // but no point in having seqno locked anymore.
+    log_info << "IST sender served all writesets. Unlocking GCache.";
+    gcache_.seqno_unlock();
+    gcache_unlocked_ = true;
+    send_eof(p, *socket_);
 }
 
 void galera::ist::Sender::send(wsrep_seqno_t first, wsrep_seqno_t last,
@@ -934,7 +952,7 @@ void galera::ist::Sender::send(wsrep_seqno_t first, wsrep_seqno_t last,
         if (first > last || (first == 0 && last == 0))
         {
             log_info << "IST sender notifying joiner, not sending anything";
-            send_eof(p, *socket_);
+            send_done(p);
             return;
         }
         else
@@ -965,7 +983,7 @@ void galera::ist::Sender::send(wsrep_seqno_t first, wsrep_seqno_t last,
 
                 if (buf_vec[i].seqno_g() == last)
                 {
-                    send_eof(p, *socket_);
+                    send_done(p);
                     return;
                 }
             }
