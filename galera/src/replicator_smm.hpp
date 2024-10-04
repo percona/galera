@@ -150,7 +150,7 @@ namespace galera
         void process_conf_change(void* recv_ctx, const struct gcs_action& cc);
         void process_state_req(void* recv_ctx, const void* req,
                                size_t req_size, wsrep_seqno_t seqno_l,
-                               wsrep_seqno_t donor_seq);
+                               wsrep_seqno_t donor_seq, const char* requestor_id);
         void process_join(wsrep_seqno_t seqno, wsrep_seqno_t seqno_l);
         void process_sync(wsrep_seqno_t seqno_l);
         void process_vote(wsrep_seqno_t seq, int64_t code,wsrep_seqno_t seqno_l);

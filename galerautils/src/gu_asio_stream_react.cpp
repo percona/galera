@@ -84,6 +84,17 @@ catch (const std::exception& e)
     log_warn << "Closing socket failed: " << e.what();
 }
 
+void gu::AsioStreamReact::shut_down() try
+{
+    in_progress_ |= socket_shutdown_in_progress;
+    socket_.shutdown(asio::socket_base::shutdown_both);
+}
+// Catch all the possible exceptions here, not only asio ones.
+catch (const std::exception& e)
+{
+    log_info << "Shutting down socket failed: " << e.what();
+}
+
 void gu::AsioStreamReact::bind(const gu::AsioIpAddress& addr) try
 {
     ::bind(socket_, addr);
@@ -206,7 +217,8 @@ size_t gu::AsioStreamReact::write(const AsioConstBuffer& buf) try
     switch (write_result.status)
     {
     case AsioStreamEngine::success:
-        assert(write_result.bytes_transferred == buf.size());
+        assert(write_result.bytes_transferred == buf.size()
+               || (in_progress_ & socket_shutdown_in_progress));
         return write_result.bytes_transferred;
     case AsioStreamEngine::want_read:
     case AsioStreamEngine::want_write:

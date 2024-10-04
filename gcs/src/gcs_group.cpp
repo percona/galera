@@ -2069,6 +2069,16 @@ gcs_group_handle_state_request (gcs_group_t*         group,
         // see gcs_request_state_transfer()
     }
 
+    // Append requesting node ID to the request.
+    // We do it here because we need joiner's uuid ONLY to pass it to
+    // IST AsyncSender instance to be able to match later the AsyncSender with
+    // the particular IST peer (pxc node).
+    // It could be done in gcs_recv_thread() where action is added to the
+    // connection queue, but it would add unnecessary overhead for actions that
+    // don't need this information (most of the actions)
+    memcpy(act->sender_id, group->nodes[joiner_idx].id, GU_UUID_STR_LEN);
+    act->sender_id[GU_UUID_STR_LEN] = 0;
+
     // Return index of donor (or error) in the seqno field to sender.
     // It will be used to detect error conditions (no availabale donor,
     // donor crashed and the like).

@@ -374,6 +374,8 @@ namespace gu
          */
         virtual void close() = 0;
 
+        virtual void shut_down() = 0;
+
         /**
          * Bind the socket to interface specified by address.
          */

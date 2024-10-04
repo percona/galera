@@ -2319,6 +2319,12 @@ long gcs_recv (gcs_conn_t*        conn,
         action->type    = recv_act->rcvd.act.type;
         action->seqno_g = recv_act->rcvd.id;
         action->seqno_l = recv_act->local_id;
+        if (gu_likely(recv_act->rcvd.sender_id[0] == 0)) {
+            action->sender_id[0] = 0;
+        } else {
+            memcpy(action->sender_id, recv_act->rcvd.sender_id, GU_UUID_STR_LEN);
+            action->sender_id[GU_UUID_STR_LEN] = 0;
+        }
 
         if (gu_unlikely (GCS_ACT_CCHANGE == action->type)) {
             err = gu_fifo_cancel_gets (conn->recv_q);

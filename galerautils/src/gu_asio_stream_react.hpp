@@ -47,6 +47,7 @@ namespace gu
         virtual void open(const gu::URI&) GALERA_OVERRIDE;
         virtual bool is_open() const GALERA_OVERRIDE;
         virtual void close() GALERA_OVERRIDE;
+        virtual void shut_down() GALERA_OVERRIDE;
         virtual void bind(const gu::AsioIpAddress&) GALERA_OVERRIDE;
         virtual void async_connect(
             const gu::URI&,
@@ -137,6 +138,7 @@ namespace gu
         // static const int server_handshake_in_progress = 0x8;
         static const int engine_wants_read = 0x10;
         static const int engine_wants_write = 0x20;
+        static const int socket_shutdown_in_progress = 0x1000;
         int in_progress_;
 
         class ReadContext

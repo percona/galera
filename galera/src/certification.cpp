@@ -580,7 +580,7 @@ galera::NBOEntry copy_ts(
                                << " out of range";
     gcs_action act = {ts->global_seqno(), ts->local_seqno(),
                       buf->data(), static_cast<int32_t>(buf->size()),
-                      GCS_ACT_WRITESET};
+                      GCS_ACT_WRITESET, 0};
     if (ts->certified() == false)
     {
         // TrxHandleSlave is from group
