@@ -151,7 +151,8 @@ void run_wsinfo(const WSInfo* const wsi, size_t const nws, int const version)
                           wsi[i].local_seqno,
                           buf,
                           static_cast<int32_t>(size),
-                          GCS_ACT_WRITESET};
+                          GCS_ACT_WRITESET,
+                          0};
         galera::TrxHandleSlavePtr ts(galera::TrxHandleSlave::New(false, sp),
                                      galera::TrxHandleSlaveDeleter());
         ck_assert(ts->unserialize<true>(act) == size);
@@ -705,7 +706,7 @@ struct CertFixture
         ck_assert(out.serialize(buf, size) == size);
         ++cur_seqno;
         gcs_action act = { cur_seqno, cur_seqno, buf,
-                           static_cast<int32_t>(size), GCS_ACT_WRITESET };
+                           static_cast<int32_t>(size), GCS_ACT_WRITESET, 0 };
         galera::TrxHandleSlavePtr ts(galera::TrxHandleSlave::New(false, sp),
                                      galera::TrxHandleSlaveDeleter{});
         ck_assert(ts->unserialize<true>(act) == size);

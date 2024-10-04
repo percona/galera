@@ -152,6 +152,16 @@ namespace galera
                 socket_->close();
             }
 
+            void terminate()
+            {
+                terminated_ = true;
+                socket_->shut_down();
+            }
+
+            bool terminated() {
+                return terminated_;
+            }
+
         private:
 
             gu::AsioIoService                         io_service_;
@@ -160,6 +170,7 @@ namespace galera
             gcache::GCache&                           gcache_;
             int                                       version_;
             bool                                      use_ssl_;
+            bool                                      terminated_;
 
             Sender(const Sender&);
             void operator=(const Sender&);
@@ -191,9 +202,11 @@ namespace galera
                      wsrep_seqno_t first,
                      wsrep_seqno_t last,
                      wsrep_seqno_t preload_start,
-                     int           version);
+                     int           version,
+                     const std::string& sender_id);
 
             void remove(AsyncSender*, wsrep_seqno_t);
+            void terminate(const std::vector<std::string>& active_peers);
             void cancel();
             gcache::GCache& gcache() { return gcache_; }
         private:

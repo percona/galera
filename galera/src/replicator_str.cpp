@@ -430,6 +430,7 @@ static wsrep_seqno_t run_ist_senders(ist::AsyncSenderMap& ist_senders,
                                      wsrep_seqno_t const  cc_lowest,
                                      int const            proto_ver,
                                      slg&                 seqno_lock_guard,
+                                     const std::string&   requestor_id,
                                      wsrep_seqno_t const  rcode)
 {
     try
@@ -439,7 +440,8 @@ static wsrep_seqno_t run_ist_senders(ist::AsyncSenderMap& ist_senders,
                         preload_start,
                         cc_seqno,
                         cc_lowest,
-                        proto_ver);
+                        proto_ver,
+                        requestor_id);
         // seqno will be unlocked when sender exists
         seqno_lock_guard.unlock_ = false;
         return rcode;
@@ -455,7 +457,8 @@ void ReplicatorSMM::process_state_req(void*       recv_ctx,
                                       const void* req,
                                       size_t      req_size,
                                       wsrep_seqno_t const seqno_l,
-                                      wsrep_seqno_t const donor_seq)
+                                      wsrep_seqno_t const donor_seq,
+                                      const char* requestor_id)
 {
     assert(recv_ctx != 0);
     assert(seqno_l > -1);
@@ -524,10 +527,12 @@ void ReplicatorSMM::process_state_req(void*       recv_ctx,
 #endif /* PXC */
                     gcache_.seqno_lock(first);
                     seqno_lock_guard.unlock_ = true;
+                    log_info << "IST seqno " << first
+                             << " found and locked in gcache";
                 }
                 catch(gu::NotFound& nf)
                 {
-                    log_info << "IST first seqno " << istr.last_applied() + 1
+                    log_info << "IST first seqno " << first
                              << " not found from cache, falling back to SST";
                     // @todo: close IST channel explicitly
                     goto full_sst;
@@ -558,6 +563,7 @@ void ReplicatorSMM::process_state_req(void*       recv_ctx,
                          * compatibility */
                                             protocol_version_,
                                             seqno_lock_guard,
+                                            std::string(requestor_id),
                                             rcode);
                 }
                 else
@@ -617,6 +623,9 @@ void ReplicatorSMM::process_state_req(void*       recv_ctx,
 
                         gcache_.seqno_lock(preload_start);
                         seqno_lock_guard.unlock_ = true;
+                        log_info << "Seqno " << preload_start
+                                << " for index preload found and locked"
+                                << " in gcache";
                     }
                     catch (gu::NotFound& nf)
                     {
@@ -646,6 +655,7 @@ void ReplicatorSMM::process_state_req(void*       recv_ctx,
                          * compatibility */
                                             protocol_version_,
                                             seqno_lock_guard,
+                                            std::string(requestor_id),
                                             rcode);
                     if (rcode < 0) goto out;
                 }

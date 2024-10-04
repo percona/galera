@@ -2152,7 +2152,7 @@ galera::ReplicatorSMM::get_real_ts_with_gcache_buffer(
         {
             gu_trace(ret->unserialize<false>(
                          gcs_action{ts->global_seqno(), WSREP_SEQNO_UNDEFINED,
-                                 buf, int32_t(size), GCS_ACT_WRITESET}));
+                                 buf, int32_t(size), GCS_ACT_WRITESET, 0}));
             ret->set_local(false);
             assert(ret->global_seqno() == ts->global_seqno());
             assert(ret->depends_seqno() >= 0 || ts->nbo_end());
@@ -2686,6 +2686,17 @@ galera::ReplicatorSMM::process_conf_change(void*                    recv_ctx,
 
 void galera::ReplicatorSMM::drain_monitors_for_local_conf_change(const gcs_act_cchange& cc)
 {
+   std::vector<std::string> allowed_IST_clients;
+   allowed_IST_clients.reserve(cc.memb.size());
+
+   for ( auto member : cc.memb) {
+       char tmp[GU_UUID_STR_LEN+1];
+       gu_uuid_print(&(member.uuid_), tmp, GU_UUID_STR_LEN);
+       tmp[GU_UUID_STR_LEN] = 0;
+       allowed_IST_clients.emplace_back(tmp);
+   }
+   ist_senders_.terminate(allowed_IST_clients);
+
    wsrep_seqno_t const upto(cert_.position());
         log_info << "Maybe drain monitors from " << last_committed()
                   << " upto current CC event " << cc.seqno
