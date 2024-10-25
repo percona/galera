@@ -23,7 +23,6 @@ static void dummy_pfs_cb(wsrep_pfs_instr_type_t type, wsrep_pfs_instr_ops_t ops,
     switch (ops) {
       case WSREP_PFS_INSTR_OPS_INIT: {
         gu_mutex_t *mutex = new gu_mutex_t();
-       //  fprintf(stderr, "KH: WSREP_PFS_INSTR_OPS_INIT x%llX\n", (unsigned long long)mutex);
         gu_mutex_init (mutex, nullptr);
         *value = mutex;
 
@@ -34,7 +33,6 @@ static void dummy_pfs_cb(wsrep_pfs_instr_type_t type, wsrep_pfs_instr_ops_t ops,
         gu_mutex_t *mutex = reinterpret_cast<gu_mutex_t *>(*value);
         assert(mutex != nullptr);
 
-        // fprintf(stderr, "KH: WSREP_PFS_INSTR_OPS_DESTROY x%llX\n", (unsigned long long)mutex);
         gu_mutex_destroy (mutex);
         delete mutex;
         *value = nullptr;
@@ -159,7 +157,6 @@ static void dummy_pfs_cb(wsrep_pfs_instr_type_t type, wsrep_pfs_instr_ops_t ops,
 gu_pfs_instr_cb_t pfs_instr_callback = dummy_pfs_cb;
 int gu_conf_set_pfs_instr_callback (gu_pfs_instr_cb_t callback)
 {
-  // fprintf(stderr, "KH: setting callback to: x%llX\n", (unsigned long long)callback);
   if (callback != nullptr) {
     pfs_instr_callback = callback;
   } else {
