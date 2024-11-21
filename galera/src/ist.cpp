@@ -526,7 +526,7 @@ void galera::ist::Receiver::run()
         current_seqno_ = WSREP_SEQNO_UNDEFINED;
 
         {
-            SocketWatchdog watchdog([&socket, this]() {
+            SocketWatchdog watchdog([&socket]() {
                 log_info << "SocketWatchdog expired";
                 socket->shut_down();
             });
