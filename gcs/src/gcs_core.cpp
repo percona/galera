@@ -1512,13 +1512,13 @@ gcs_core_send_vote (gcs_core_t* const core, const gu::GTID& gtid, int64_t code,
 #else
     CodeMsg const cmsg(gtid, code);
     assert(cmsg.uuid() != GU_UUID_NIL);
-    int const cmsg_size(cmsg.serial_size());
+    constexpr int cmsg_size(cmsg.serial_size());
 
     // Max length of the error message sent by the server is 2*MAX_SLAVE_ERRMSG
     // i.e, 2048 bytes (defined in wsrep_store_error()).
     //
     // So the buffer length should be 2048 + size of coded message
-    const size_t buffer_length = 2048 + cmsg_size;
+    constexpr size_t buffer_length = 2048 + cmsg_size;
 
     char vmsg[buffer_length] = { 0, };
     assert(cmsg_size < int(sizeof(vmsg)));

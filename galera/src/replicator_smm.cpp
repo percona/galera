@@ -2152,7 +2152,7 @@ galera::ReplicatorSMM::get_real_ts_with_gcache_buffer(
         {
             gu_trace(ret->unserialize<false>(
                          gcs_action{ts->global_seqno(), WSREP_SEQNO_UNDEFINED,
-                                 buf, int32_t(size), GCS_ACT_WRITESET, 0}));
+                                 buf, int32_t(size), GCS_ACT_WRITESET, {0}}));
             ret->set_local(false);
             assert(ret->global_seqno() == ts->global_seqno());
             assert(ret->depends_seqno() >= 0 || ts->nbo_end());

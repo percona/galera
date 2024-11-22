@@ -106,6 +106,12 @@ enable_testing()
 # Suppress warnings for all clang versions
 IF(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   remove_compile_flags(-Wdeprecated -Wdeprecated-dynamic-exception-spec -Winconsistent-missing-destructor-override -Wshadow-field -Wheader-hygiene)
+
+  # gcs (and probably others) suffer from inconsistent usage of override.
+  # If the server is build in maintainer mode -Winconsistent-missing-override
+  # flag is added on the server level in maintainer.cmake.
+  append_cflags_if_supported(-Wno-inconsistent-missing-override)
+
   # fix clang-12 issue: galerautils/src/gu_deqmap.hpp:505:20: error: returning address of local temporary object [-Werror,-Wreturn-stack-address]
   IF(CMAKE_CXX_COMPILER_ID MATCHES "Clang" AND NOT CMAKE_CXX_COMPILER_VERSION VERSION_LESS 12 AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 13)
     append_cflags_if_supported(-Wno-return-stack-address)

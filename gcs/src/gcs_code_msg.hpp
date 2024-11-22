@@ -54,7 +54,7 @@ public:
 
     const void* operator()() const { return &msg_; }
 
-    static int serial_size() { return sizeof(Msg); }
+    static constexpr int serial_size() { return sizeof(Msg); }
 
     void print(std::ostream& os) const;
 
