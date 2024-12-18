@@ -79,17 +79,11 @@ namespace gcache
 
         void  reset();
 
-<<<<<<< HEAD
-        void  seqno_reset(bool zero_out = false);
-||||||| fed86127
-        void  seqno_reset();
-=======
         void  seqno_lock(seqno_t const seqno_g) { seqno_locked_ = seqno_g; }
 
         void  seqno_unlock() { seqno_locked_ = SEQNO_MAX; }
 
-        void  seqno_reset();
->>>>>>> release_26.4.21
+        void  seqno_reset(bool zero_out = false);
 
         /* returns true when successfully discards all seqnos in range */
         bool  discard_seqnos(seqno2ptr_t const& seq, seqno2ptr_t::iterator i_begin,

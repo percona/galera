@@ -1698,21 +1698,17 @@ void gcs_core_get_status(gcs_core_t* core, gu::Status& status)
     gu_mutex_unlock(&core->send_lock);
 }
 
-<<<<<<< HEAD
 const gcs_group_t*
 gcs_core_get_group (const gcs_core_t* core)
 {
     return &core->group;
 }
 
-||||||| fed86127
-=======
 void gcs_core_get_protocols(gcs_core_t* core, int& appl, int& repl, int& gcs)
 {
     core->group.get_protocols(appl, repl, gcs);
 }
 
->>>>>>> release_26.4.21
 #ifdef GCS_CORE_TESTING
 
 gcs_backend_t*

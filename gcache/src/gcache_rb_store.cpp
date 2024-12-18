@@ -123,16 +123,12 @@ namespace gcache
         next_      (first_),
         seqno2ptr_ (seqno2ptr),
         gid_       (gid),
-<<<<<<< HEAD
+        seqno_locked_(SEQNO_MAX),
 #ifdef PXC
         max_used_  (first_ - static_cast<uint8_t*>(mmap_.get_ptr()) +
                     sizeof(BufferHeader)),
         freeze_purge_at_seqno_(SEQNO_ILL),
 #endif /* PXC */
-||||||| fed86127
-=======
-        seqno_locked_(SEQNO_MAX),
->>>>>>> release_26.4.21
         size_cache_(end_ - start_ - sizeof(BufferHeader)),
         size_free_ (size_cache_),
         size_used_ (0),
@@ -945,7 +941,7 @@ namespace gcache
                     In such a case generate new Master Key with new, unique ID and trigger
                     GCache reset.
                     Note: for simplicity we just generate new key and reset GCache. If necessary
-                    it is possible to only rotate MK with forced use o new uuid, but do not 
+                    it is possible to only rotate MK with forced use o new uuid, but do not
                     overcomplicate for now. */
                     std::string next_mk_name = gu::create_master_key_name(const_mk_id_, master_key_uuid_, master_key_id_+1);
                     std::string next_mk = master_key_provider_->get_key(next_mk_name);

@@ -97,19 +97,9 @@ gcs_group::gcs_group(gu::Config&  cnf,
     prim_repl_ver (0),
     prim_appl_ver (0),
 
-<<<<<<< HEAD
-    *const_cast<gcs_proto_t*>(&group->gcs_proto_ver) = gcs_proto_ver;
-    *const_cast<int*>(&group->repl_proto_ver) = repl_proto_ver;
-    *const_cast<int*>(&group->appl_proto_ver) = appl_proto_ver;
-||||||| fed86127
-    *(gcs_proto_t*)&group->gcs_proto_ver = gcs_proto_ver;
-    *(int*)&group->repl_proto_ver = repl_proto_ver;
-    *(int*)&group->appl_proto_ver = appl_proto_ver;
-=======
     gcs_proto_ver (gcs_proto_ver),
     repl_proto_ver(repl_proto_ver),
     appl_proto_ver(appl_proto_ver),
->>>>>>> release_26.4.21
 
     quorum        (GCS_QUORUM_NON_PRIMARY),
     last_applied_proto_ver(-1)
@@ -398,16 +388,10 @@ group_check_donor (gcs_group_t* group)
         gu_warn ("Donor %s is no longer in the group. State transfer cannot "
                  "be completed, need to abort.", donor_id);
 
-<<<<<<< HEAD
 #ifdef PXC
 #else
-        gu_abort();
-#endif /* PXC */
-||||||| fed86127
-        gu_abort();
-=======
         return -ENOTRECOVERABLE;
->>>>>>> release_26.4.21
+#endif /* PXC */
     }
 
     return 0;

@@ -68,16 +68,12 @@ typedef enum status_vars
 {
     STATS_STATE_UUID = 0,
     STATS_PROTOCOL_VERSION,
-<<<<<<< HEAD
 #ifdef PXC
     STATS_LAST_APPLIED,
 #endif /* PXC */
-||||||| fed86127
-=======
     STATS_PROTO_APPL,
     STATS_PROTO_REPL,
     STATS_PROTO_GCS,
->>>>>>> release_26.4.21
     STATS_LAST_COMMITTED,
 #ifdef PXC
     STATS_MONITOR_STATUS,
@@ -148,16 +144,12 @@ static const struct wsrep_stats_var wsrep_stats[STATS_MAX + 1] =
 {
     { "local_state_uuid",         WSREP_VAR_STRING, { 0 }  },
     { "protocol_version",         WSREP_VAR_INT64,  { 0 }  },
-<<<<<<< HEAD
 #ifdef PXC
     { "last_applied",             WSREP_VAR_INT64,  { -1 } },
 #endif /* PXC */
-||||||| fed86127
-=======
     { "protocol_application",     WSREP_VAR_INT64,  { 0 }  },
     { "protocol_replicator",      WSREP_VAR_INT64,  { 0 }  },
     { "protocol_GCS",             WSREP_VAR_INT64,  { 0 }  },
->>>>>>> release_26.4.21
     { "last_committed",           WSREP_VAR_INT64,  { -1 } },
 #ifdef PXC
     { "monitor_status (L/A/C)",   WSREP_VAR_STRING, { 0 }  },

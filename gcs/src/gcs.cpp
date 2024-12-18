@@ -302,6 +302,17 @@ struct gcs_repl_act
     { }
 };
 
+static void
+update_fc_auto_evict_params(gcs_conn_t* conn, bool update_window = true)
+{
+    if (update_window) {
+        conn->fc_auto_evict_window_ns =
+            conn->params.fc_auto_evict_window * 1000000000LL;
+    }
+    conn->fc_auto_evict_threshold_ns =
+        conn->fc_auto_evict_window_ns * conn->params.fc_auto_evict_threshold;
+}
+
 gcs_conn::gcs_conn(gu::Config& conf,
                    gcache_t*   cache,
                    gu::Progress<gcs_seqno_t>::Callback* const progress_cb,
@@ -358,132 +369,7 @@ gcs_conn::gcs_conn(gu::Config& conf,
     progress_cb_(progress_cb),
     progress_()
 {
-<<<<<<< HEAD
-    if (conn->config_is_local) gu_config_destroy(conn->config);
-}
-
-/*! Creates local configuration object if no external is submitted */
-static long
-_init_params (gcs_conn_t* conn, gu_config_t* conf)
-{
-    long rc;
-
-    conn->config = conf;
-    conn->config_is_local = false;
-
-    if (!conn->config) {
-        conn->config = gu_config_create();
-
-        if (conn->config) {
-            conn->config_is_local = true;
-        }
-        else {
-            rc = -ENOMEM;
-            goto enomem;
-        }
-    }
-
-    rc = gcs_params_init (&conn->params, conn->config);
-
-    if (!rc) return 0;
-
-    _cleanup_params (conn);
-
-enomem:
-
-    gu_error ("Parameter initialization failed: %s", strerror (-rc));
-
-    return rc;
-}
-
-static void
-update_fc_auto_evict_params(gcs_conn_t* conn, bool update_window = true)
-{
-    if (update_window) {
-        conn->fc_auto_evict_window_ns =
-            conn->params.fc_auto_evict_window * 1000000000LL;
-    }
-    conn->fc_auto_evict_threshold_ns =
-        conn->fc_auto_evict_window_ns * conn->params.fc_auto_evict_threshold;
-}
-
-/* Creates a group connection handle */
-gcs_conn_t*
-gcs_create (gu_config_t* const conf, gcache_t* const gcache,
-            gu::Progress<gcs_seqno_t>::Callback* const progress_cb,
-            const char* const node_name, const char* const inc_addr,
-            int const repl_proto_ver, int const appl_proto_ver)
-{
-    gcs_conn_t* conn = GU_CALLOC (1, gcs_conn_t);
-
-    if (!conn) {
-        gu_error ("Could not allocate GCS connection handle: %s",
-                  strerror (ENOMEM));
-        return NULL;
-    }
-
-    if (_init_params (conn, conf)) {
-        goto init_params_failed;
-    }
-||||||| fed86127
-    if (conn->config_is_local) gu_config_destroy(conn->config);
-}
-
-/*! Creates local configuration object if no external is submitted */
-static long
-_init_params (gcs_conn_t* conn, gu_config_t* conf)
-{
-    long rc;
-
-    conn->config = conf;
-    conn->config_is_local = false;
-
-    if (!conn->config) {
-        conn->config = gu_config_create();
-
-        if (conn->config) {
-            conn->config_is_local = true;
-        }
-        else {
-            rc = -ENOMEM;
-            goto enomem;
-        }
-    }
-
-    rc = gcs_params_init (&conn->params, conn->config);
-
-    if (!rc) return 0;
-
-    _cleanup_params (conn);
-
-enomem:
-
-    gu_error ("Parameter initialization failed: %s", strerror (-rc));
-
-    return rc;
-}
-
-/* Creates a group connection handle */
-gcs_conn_t*
-gcs_create (gu_config_t* const conf, gcache_t* const gcache,
-            gu::Progress<gcs_seqno_t>::Callback* const progress_cb,
-            const char* const node_name, const char* const inc_addr,
-            int const repl_proto_ver, int const appl_proto_ver)
-{
-    gcs_conn_t* conn = GU_CALLOC (1, gcs_conn_t);
-
-    if (!conn) {
-        gu_error ("Could not allocate GCS connection handle: %s",
-                  strerror (ENOMEM));
-        return NULL;
-    }
-
-    if (_init_params (conn, conf)) {
-        goto init_params_failed;
-    }
-=======
     auto conn(this); // to minimize diff
->>>>>>> release_26.4.21
 
     if (gcs_fc_init (&conn->stfc,
                      conn->params.recv_q_hard_limit,
@@ -2129,16 +2015,8 @@ long gcs_close (gcs_conn_t *conn)
 
 gcs_conn::~gcs_conn()
 {
-<<<<<<< HEAD
-    long err = 0;
-
-||||||| fed86127
-    long err;
-
-=======
     auto conn(this); // to minimize diff
     int err;
->>>>>>> release_26.4.21
     gu_cond_t tmp_cond;
     gu_cond_init (&tmp_cond, NULL);
 
@@ -2149,19 +2027,7 @@ gcs_conn::~gcs_conn()
             if (GCS_CONN_CLOSED > conn->state)
                 gu_error ("Attempt to call gcs_destroy() before gcs_close(): "
                           "state = %d", conn->state);
-<<<<<<< HEAD
-            err = -EBADFD;
-||||||| fed86127
-
-            gu_cond_destroy (&tmp_cond);
-
-            return -EBADFD;
-=======
-
-            gu_cond_destroy (&tmp_cond);
-
-            gu_throw_error(EBADFD);
->>>>>>> release_26.4.21
+            err = EBADFD;
         }
 
         gcs_sm_leave (conn->sm);
@@ -2180,25 +2046,14 @@ gcs_conn::~gcs_conn()
     gu_cond_destroy (&tmp_cond);
     gcs_sm_destroy (conn->sm);
 
-<<<<<<< HEAD
     if ((err = gcs_fifo_lite_destroy (conn->repl_q)))
     {
-        gu_debug ("Error destroying repl FIFO: %ld (%s)", err, strerror(-err));
-||||||| fed86127
-    if ((err = gcs_fifo_lite_destroy (conn->repl_q))) {
-        gu_debug ("Error destroying repl FIFO: %ld (%s)", err, strerror(-err));
-        return err;
-=======
-    if ((err = gcs_fifo_lite_destroy (conn->repl_q))) {
         gu_debug ("Error destroying repl FIFO: %d (%s)", err, strerror(-err));
-        gu_throw_error(-err);
->>>>>>> release_26.4.21
     }
 
-<<<<<<< HEAD
     if ((err = gcs_core_close(conn->core)))
     {
-        gu_debug ("Failed to close GCS: error: %ld (%s)",-err, strerror(-err));
+        gu_debug ("Failed to close GCS: error: %d (%s)",-err, strerror(-err));
     }
 
     /* gcs_core_destory() cleans up many other things along with destroying the
@@ -2206,34 +2061,16 @@ gcs_conn::~gcs_conn()
      * even after a failure in gcs_core_close() */
     if ((err = gcs_core_destroy (conn->core)))
     {
-        gu_debug ("Error destroying core: %ld (%s)", err, strerror(-err));
-||||||| fed86127
-    if ((err = gcs_core_destroy (conn->core))) {
-        gu_debug ("Error destroying core: %ld (%s)", err, strerror(-err));
-        return err;
-=======
-    if ((err = gcs_core_destroy (conn->core))) {
         gu_debug ("Error destroying core: %d (%s)", err, strerror(-err));
-        gu_throw_error(-err);
->>>>>>> release_26.4.21
     }
     /* This must not last for long */
     while (gu_mutex_destroy (&conn->fc_lock));
+
+    if (err != 0) {
+        gu_throw_error(err);
+    }
 }
 
-<<<<<<< HEAD
-    _cleanup_params (conn);
-
-    gu_free (conn);
-
-    return err;
-||||||| fed86127
-    _cleanup_params (conn);
-
-    gu_free (conn);
-
-    return 0;
-=======
 /* Frees resources associated with GCS connection handle */
 long gcs_destroy (gcs_conn_t *conn)
 {
@@ -2244,7 +2081,6 @@ long gcs_destroy (gcs_conn_t *conn)
     catch (...) {
         return -1;
     }
->>>>>>> release_26.4.21
 }
 
 /* Puts action in the send queue and returns */
@@ -2916,21 +2752,17 @@ gcs_get_stats (gcs_conn_t* conn, struct gcs_stats* stats)
     stats->fc_received = conn->stats_fc_received;
     stats->fc_active   = fc_active(conn);
     stats->fc_requested= conn->stop_sent_ > 0;
-<<<<<<< HEAD
 
 #ifdef PXC
     stats->fc_lower_limit = conn->lower_limit;
     stats->fc_upper_limit = conn->upper_limit;
     stats->fc_status = conn->stop_sent() > 0 ? 1 : 0;
 #endif /* PXC */
-||||||| fed86127
-=======
 
     gcs_core_get_protocols(conn->core,
                            stats->proto_appl,
                            stats->proto_repl,
                            stats->proto_gcs);
->>>>>>> release_26.4.21
 }
 
 void

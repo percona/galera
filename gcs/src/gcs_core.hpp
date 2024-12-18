@@ -176,7 +176,6 @@ gcs_core_param_get (gcs_core_t* core, const char* key);
 
 void gcs_core_get_status(gcs_core_t* core, gu::Status& status);
 
-<<<<<<< HEAD
 #ifdef PXC
 void
 gcs_core_fetch_pfs_info(
@@ -189,11 +188,8 @@ gcs_core_fetch_pfs_info(
 extern const gcs_group_t*
 gcs_core_get_group (const gcs_core_t* core);
 
-||||||| fed86127
-=======
 void gcs_core_get_protocols(gcs_core_t* core, int& appl, int& repl, int& gcs);
 
->>>>>>> release_26.4.21
 #ifdef GCS_CORE_TESTING // things compiled only for unit tests
 
 /* gcs_core_send() interface does not allow enough concurrency control to model

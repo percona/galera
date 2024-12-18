@@ -242,7 +242,6 @@ gcs_params_init (struct gcs_params* const params, gu_config_t* const config)
     if ((ret = params_init_long (config, GCS_PARAMS_FC_DEBUG, 0, LONG_MAX,
                                  &params->fc_debug))) return ret;
 
-<<<<<<< HEAD
     if ((ret = params_init_double (config, GCS_PARAMS_FC_AUTO_EVICT_WND,
                                    0.0, DBL_MAX,
                                    &params->fc_auto_evict_window))) return ret;
@@ -251,12 +250,7 @@ gcs_params_init (struct gcs_params* const params, gu_config_t* const config)
                                    0.0 + 1.e-9, 1.0,
                                    &params->fc_auto_evict_threshold))) return ret;
 
-    if ((ret = params_init_long (config, GCS_PARAMS_MAX_PKT_SIZE, 0,LONG_MAX,
-||||||| fed86127
-    if ((ret = params_init_long (config, GCS_PARAMS_MAX_PKT_SIZE, 0,LONG_MAX,
-=======
     if ((ret = params_init_long (config, GCS_PARAMS_MAX_PKT_SIZE, 0, LONG_MAX,
->>>>>>> release_26.4.21
                                  &params->max_packet_size))) return ret;
 
     if ((ret = params_init_double (config, GCS_PARAMS_FC_FACTOR, 0.0, 1.0,
