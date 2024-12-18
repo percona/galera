@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2010-2021 Codership Oy <info@codership.com>
+ * Copyright (C) 2010-2024 Codership Oy <info@codership.com>
  */
 
 #include "gcache_rb_store.hpp"
@@ -123,11 +123,16 @@ namespace gcache
         next_      (first_),
         seqno2ptr_ (seqno2ptr),
         gid_       (gid),
+<<<<<<< HEAD
 #ifdef PXC
         max_used_  (first_ - static_cast<uint8_t*>(mmap_.get_ptr()) +
                     sizeof(BufferHeader)),
         freeze_purge_at_seqno_(SEQNO_ILL),
 #endif /* PXC */
+||||||| fed86127
+=======
+        seqno_locked_(SEQNO_MAX),
+>>>>>>> release_26.4.21
         size_cache_(end_ - start_ - sizeof(BufferHeader)),
         size_free_ (size_cache_),
         size_used_ (0),
@@ -206,7 +211,7 @@ namespace gcache
 
             BufferHeader* const bh(ptr2BH(*j));
 
-            if (gu_likely (BH_is_released(bh)))
+            if (gu_likely (BH_is_released(bh) && bh->seqno_g < seqno_locked_))
             {
                 seqno2ptr_.erase (j);
 

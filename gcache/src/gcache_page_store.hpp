@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2010-2018 Codership Oy <info@codership.com>
+ * Copyright (C) 2010-2024 Codership Oy <info@codership.com>
  */
 
 /*! @file page store class */
@@ -53,6 +53,7 @@ namespace gcache
 
         void  reset();
 
+<<<<<<< HEAD
 #ifdef PXC
         void  set_page_size (size_t size) { page_size_ = size; cleanup();}
 
@@ -62,6 +63,13 @@ namespace gcache
 
         size_t allocated_pool_size ();
 #else
+||||||| fed86127
+=======
+        void  seqno_lock(seqno_t) {}
+
+        void  seqno_unlock() {}
+
+>>>>>>> release_26.4.21
         void  set_page_size (size_t size) { page_size_ = size; }
 
         void  set_keep_size (size_t size) { keep_size_ = size; }

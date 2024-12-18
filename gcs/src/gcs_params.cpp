@@ -46,8 +46,8 @@ static ssize_t const GCS_PARAMS_RECV_Q_HARD_LIMIT_DEFAULT     = SSIZE_MAX;
 static const char* const GCS_PARAMS_RECV_Q_SOFT_LIMIT_DEFAULT = "0.25";
 static const char* const GCS_PARAMS_MAX_THROTTLE_DEFAULT      = "0.25";
 
-bool
-gcs_params_register(gu_config_t* conf)
+static bool
+gcs_params_register(gu_config_t* const conf)
 {
     bool ret = 0;
 
@@ -97,6 +97,15 @@ gcs_params_register(gu_config_t* conf)
     ret |= gu_config_add (conf, GCS_PARAMS_SM_DUMP, "0", 0);
 #endif /* GCS_SM_DEBUG */
     return ret;
+}
+
+void
+gcs_params::register_params(gu::Config& conf)
+{
+    if (gcs_params_register(reinterpret_cast<gu_config_t*>(&conf)))
+    {
+        gu_throw_fatal << "Failed to register GCS parameters";
+    }
 }
 
 static long
@@ -222,10 +231,10 @@ static void deprecation_warning(gu_config_t* config,
     }
 }
 
-long
-gcs_params_init (struct gcs_params* params, gu_config_t* config)
+static int
+gcs_params_init (struct gcs_params* const params, gu_config_t* const config)
 {
-    long ret;
+    int ret;
 
     if ((ret = params_init_long (config, GCS_PARAMS_FC_LIMIT, 1, LONG_MAX,
                                  &params->fc_base_limit))) return ret;
@@ -233,6 +242,7 @@ gcs_params_init (struct gcs_params* params, gu_config_t* config)
     if ((ret = params_init_long (config, GCS_PARAMS_FC_DEBUG, 0, LONG_MAX,
                                  &params->fc_debug))) return ret;
 
+<<<<<<< HEAD
     if ((ret = params_init_double (config, GCS_PARAMS_FC_AUTO_EVICT_WND,
                                    0.0, DBL_MAX,
                                    &params->fc_auto_evict_window))) return ret;
@@ -242,6 +252,11 @@ gcs_params_init (struct gcs_params* params, gu_config_t* config)
                                    &params->fc_auto_evict_threshold))) return ret;
 
     if ((ret = params_init_long (config, GCS_PARAMS_MAX_PKT_SIZE, 0,LONG_MAX,
+||||||| fed86127
+    if ((ret = params_init_long (config, GCS_PARAMS_MAX_PKT_SIZE, 0,LONG_MAX,
+=======
+    if ((ret = params_init_long (config, GCS_PARAMS_MAX_PKT_SIZE, 0, LONG_MAX,
+>>>>>>> release_26.4.21
                                  &params->max_packet_size))) return ret;
 
     if ((ret = params_init_double (config, GCS_PARAMS_FC_FACTOR, 0.0, 1.0,
@@ -279,4 +294,23 @@ gcs_params_init (struct gcs_params* params, gu_config_t* config)
     if ((ret = params_init_bool (config, GCS_PARAMS_SYNC_DONOR,
                                  &params->sync_donor))) return ret;
     return 0;
+}
+
+gcs_params::gcs_params(gu::Config& conf)
+    :
+    fc_resume_factor(),
+    recv_q_soft_limit(),
+    max_throttle(),
+    recv_q_hard_limit(),
+    fc_base_limit(),
+    max_packet_size(),
+    fc_debug(),
+    fc_single_primary(),
+    sync_donor()
+{
+    int const ret(gcs_params_init(this, reinterpret_cast<gu_config_t*>(&conf)));
+    if (0 != ret)
+    {
+        gu_throw_error(-ret);
+    }
 }

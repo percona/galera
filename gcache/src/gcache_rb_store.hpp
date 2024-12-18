@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2010-2021 Codership Oy <info@codership.com>
+ * Copyright (C) 2010-2024 Codership Oy <info@codership.com>
  */
 
 /*! @file ring buffer storage class */
@@ -79,7 +79,17 @@ namespace gcache
 
         void  reset();
 
+<<<<<<< HEAD
         void  seqno_reset(bool zero_out = false);
+||||||| fed86127
+        void  seqno_reset();
+=======
+        void  seqno_lock(seqno_t const seqno_g) { seqno_locked_ = seqno_g; }
+
+        void  seqno_unlock() { seqno_locked_ = SEQNO_MAX; }
+
+        void  seqno_reset();
+>>>>>>> release_26.4.21
 
         /* returns true when successfully discards all seqnos in range */
         bool  discard_seqnos(seqno2ptr_t const& seq, seqno2ptr_t::iterator i_begin,
@@ -196,6 +206,7 @@ namespace gcache
 
         seqno2ptr_t&       seqno2ptr_;
         gu::UUID&          gid_;
+        seqno_t            seqno_locked_;
 
 #ifdef PXC
         size_t             max_used_; // maximal memory usage (in bytes)

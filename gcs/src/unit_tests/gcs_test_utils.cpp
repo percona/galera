@@ -5,6 +5,8 @@
 #include "gcs_test_utils.hpp"
 #include <gu_init.h>
 
+#include "gu_inttypes.hpp"
+
 namespace gcs_test
 {
 
@@ -16,7 +18,7 @@ InitConfig::common_ctor(gu::Config& cfg)
     gu_init(nullptr, nullptr);
 
     gcache::GCache::register_params(cfg);
-    gcs_register_params(reinterpret_cast<gu_config_t*>(&cfg));
+    gcs_register_params(cfg);
 }
 
 InitConfig::InitConfig(gu::Config& cfg)
@@ -36,7 +38,7 @@ GcsGroup::GcsGroup() :
     conf_   (),
     init_   (conf_, "group"),
     gcache_ (NULL),
-    group_  (),
+    group_  (NULL),
     initialized_(false)
 {}
 
@@ -52,28 +54,9 @@ GcsGroup::common_ctor(const char*  node_name,
 
     conf_.set("gcache.name", std::string(node_name) + ".cache");
     gcache_ = new gcache::GCache(NULL, conf_, ".");
-
-    int const err(gcs_group_init(&group_, &conf_,
-                                 reinterpret_cast<gcache_t*>(gcache_),
-                                 node_name, inc_addr, gver, rver, aver));
-    if (err)
-    {
-        gu_throw_error(-err) << "GcsGroup init failed: " << -err;
-    }
-
+    group_ = new gcs_group(conf_, reinterpret_cast<gcache_t*>(gcache_),
+                           node_name, inc_addr, gver, rver, aver);
     initialized_ = true;
-}
-
-GcsGroup::GcsGroup(const std::string& node_id,
-                   const std::string& inc_addr,
-                   gcs_proto_t gver, int rver, int aver) :
-    conf_   (),
-    init_   (conf_, "group"),
-    gcache_ (NULL),
-    group_  (),
-    initialized_(false)
-{
-    common_ctor(node_id.c_str(), inc_addr.c_str(), gver, rver, aver);
 }
 
 void
@@ -82,7 +65,8 @@ GcsGroup::common_dtor()
     if (initialized_)
     {
         assert(NULL != gcache_);
-        gcs_group_free(&group_);
+        assert(NULL != group_);
+        delete group_;
         delete gcache_;
 
         std::string const gcache_name(conf_.get("gcache.name"));
@@ -91,6 +75,7 @@ GcsGroup::common_dtor()
     else
     {
         assert(NULL == gcache_);
+        assert(NULL == group_);
     }
 }
 
@@ -397,16 +382,20 @@ gt_group::deliver_join_sync_msg(int const src, gcs_msg_type_t const type)
 gcs_seqno_t
 gt_group::deliver_last_applied(int const from, gcs_seqno_t const la)
 {
-    gcs_seqno_t res = GCS_SEQNO_ILL;
-
-    if (nodes_num > 0) res = nodes[0]->deliver_last_applied(from, la);
+    gcs_seqno_t const ret(nodes_num > 0 ?
+                          nodes[0]->deliver_last_applied(from, la) :
+                          GCS_SEQNO_ILL);
 
     for (int i(1); i < nodes_num; ++i)
     {
-        ck_assert(nodes[i]->deliver_last_applied(from, la) == res);
+        gcs_seqno_t const res(nodes[i]->deliver_last_applied(from, la));
+        ck_assert_msg((ret == res || proto_ver <= 2),
+                      "nodes[%d]->deliver_last_applied(%d, %" PRId64 "): %"
+                      PRId64 ", expected %" PRId64 ", proto_ver %d",
+                      i, from, la, res, ret, proto_ver);
     }
 
-    return res;
+    return ret;
 }
 
 bool
@@ -559,6 +548,7 @@ gt_group::sync_node(int const joiner_idx)
 gt_group::gt_group(int const num, int const gcs_proto_ver, bool const prim)
     : nodes(),
       nodes_num(0),
+      proto_ver(gcs_proto_ver),
       primary(prim)
 {
     if (num > 0)

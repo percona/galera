@@ -68,9 +68,16 @@ typedef enum status_vars
 {
     STATS_STATE_UUID = 0,
     STATS_PROTOCOL_VERSION,
+<<<<<<< HEAD
 #ifdef PXC
     STATS_LAST_APPLIED,
 #endif /* PXC */
+||||||| fed86127
+=======
+    STATS_PROTO_APPL,
+    STATS_PROTO_REPL,
+    STATS_PROTO_GCS,
+>>>>>>> release_26.4.21
     STATS_LAST_COMMITTED,
 #ifdef PXC
     STATS_MONITOR_STATUS,
@@ -141,9 +148,16 @@ static const struct wsrep_stats_var wsrep_stats[STATS_MAX + 1] =
 {
     { "local_state_uuid",         WSREP_VAR_STRING, { 0 }  },
     { "protocol_version",         WSREP_VAR_INT64,  { 0 }  },
+<<<<<<< HEAD
 #ifdef PXC
     { "last_applied",             WSREP_VAR_INT64,  { -1 } },
 #endif /* PXC */
+||||||| fed86127
+=======
+    { "protocol_application",     WSREP_VAR_INT64,  { 0 }  },
+    { "protocol_replicator",      WSREP_VAR_INT64,  { 0 }  },
+    { "protocol_GCS",             WSREP_VAR_INT64,  { 0 }  },
+>>>>>>> release_26.4.21
     { "last_committed",           WSREP_VAR_INT64,  { -1 } },
 #ifdef PXC
     { "monitor_status (L/A/C)",   WSREP_VAR_STRING, { 0 }  },
@@ -286,6 +300,9 @@ galera::ReplicatorSMM::stats_get() const
     struct gcs_stats stats;
     gcs_.get_stats (&stats);
 
+    sv[STATS_PROTO_APPL          ].value._int64  = stats.proto_appl;
+    sv[STATS_PROTO_REPL          ].value._int64  = stats.proto_repl;
+    sv[STATS_PROTO_GCS           ].value._int64  = stats.proto_gcs;
     sv[STATS_LOCAL_SEND_QUEUE    ].value._int64  = stats.send_q_len;
     sv[STATS_LOCAL_SEND_QUEUE_MAX].value._int64  = stats.send_q_len_max;
     sv[STATS_LOCAL_SEND_QUEUE_MIN].value._int64  = stats.send_q_len_min;
@@ -464,7 +481,7 @@ galera::ReplicatorSMM::stats_get() const
         sv[STATS_INCOMING_LIST].value._string = tail_buf;
         tail_buf += incoming_list_.size() + 1;
 
-        // Iterate over dynamical status variables and assing strings
+        // Iterate over dynamical status variables and assign strings
         size_t sv_pos(STATS_INCOMING_LIST + 1);
         for (gu::Status::const_iterator i(status.begin());
              i != status.end(); ++i, ++sv_pos)

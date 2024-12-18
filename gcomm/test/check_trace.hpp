@@ -306,8 +306,17 @@ namespace gcomm
         {
             using namespace std::placeholders;
             gu_trace(std::for_each(protos_.rbegin(), protos_.rend(),
+<<<<<<< HEAD
                                    std::bind(
                                        std::mem_fn(&Protolay::connect), _1, first)));
+||||||| fed86127
+                                   std::bind2nd(
+                                       std::mem_fun(&Protolay::connect), first)));
+=======
+                                   [first](Protolay* pl)
+                                   { pl->connect(first); }));
+            ;
+>>>>>>> release_26.4.21
         }
 
         void close(bool force = false)
@@ -317,8 +326,14 @@ namespace gcomm
             {
                 (*i)->close();
             }
+<<<<<<< HEAD
             // gu_trace(std::for_each(protos.rbegin(), protos.rend(),
             //                       std::mem_fn(&Protolay::close)));
+||||||| fed86127
+            // gu_trace(std::for_each(protos.rbegin(), protos.rend(),
+            //                       std::mem_fun(&Protolay::close)));
+=======
+>>>>>>> release_26.4.21
         }
 
 
@@ -329,8 +344,14 @@ namespace gcomm
             {
                 (*i)->close(uuid);
             }
+<<<<<<< HEAD
             // gu_trace(std::for_each(protos.rbegin(), protos.rend(),
             //                       std::mem_fn(&Protolay::close)));
+||||||| fed86127
+            // gu_trace(std::for_each(protos.rbegin(), protos.rend(),
+            //                       std::mem_fun(&Protolay::close)));
+=======
+>>>>>>> release_26.4.21
         }
 
         void send()
@@ -423,7 +444,13 @@ namespace gcomm
         gu::datetime::Date handle_timers()
         {
             std::for_each(protos_.begin(), protos_.end(),
+<<<<<<< HEAD
                           std::mem_fn(&Protolay::handle_timers));
+||||||| fed86127
+                          std::mem_fun(&Protolay::handle_timers));
+=======
+                          [](Protolay* pl) { pl->handle_timers(); });
+>>>>>>> release_26.4.21
             return gu::datetime::Date::max();
         }
 
