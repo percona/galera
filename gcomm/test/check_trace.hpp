@@ -306,8 +306,9 @@ namespace gcomm
         {
             using namespace std::placeholders;
             gu_trace(std::for_each(protos_.rbegin(), protos_.rend(),
-                                   std::bind(
-                                       std::mem_fn(&Protolay::connect), _1, first)));
+                                   [first](Protolay* pl)
+                                   { pl->connect(first); }));
+            ;
         }
 
         void close(bool force = false)
@@ -317,8 +318,6 @@ namespace gcomm
             {
                 (*i)->close();
             }
-            // gu_trace(std::for_each(protos.rbegin(), protos.rend(),
-            //                       std::mem_fn(&Protolay::close)));
         }
 
 
@@ -329,8 +328,6 @@ namespace gcomm
             {
                 (*i)->close(uuid);
             }
-            // gu_trace(std::for_each(protos.rbegin(), protos.rend(),
-            //                       std::mem_fn(&Protolay::close)));
         }
 
         void send()
@@ -423,7 +420,7 @@ namespace gcomm
         gu::datetime::Date handle_timers()
         {
             std::for_each(protos_.begin(), protos_.end(),
-                          std::mem_fn(&Protolay::handle_timers));
+                          [](Protolay* pl) { pl->handle_timers(); });
             return gu::datetime::Date::max();
         }
 

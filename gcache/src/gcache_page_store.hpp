@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2010-2018 Codership Oy <info@codership.com>
+ * Copyright (C) 2010-2024 Codership Oy <info@codership.com>
  */
 
 /*! @file page store class */
@@ -52,6 +52,10 @@ namespace gcache
         }
 
         void  reset();
+
+        void  seqno_lock(seqno_t) {}
+
+        void  seqno_unlock() {}
 
 #ifdef PXC
         void  set_page_size (size_t size) { page_size_ = size; cleanup();}

@@ -87,7 +87,7 @@ Aes_ctr_cipher<TYPE>::Aes_ctr_cipher()
 }
 
 template <Cipher_type TYPE>
-Aes_ctr_cipher<TYPE>::~Aes_ctr_cipher<TYPE>() {
+Aes_ctr_cipher<TYPE>::~Aes_ctr_cipher() {
   close();
 }
 
