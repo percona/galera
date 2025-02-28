@@ -1040,10 +1040,10 @@ ReplicatorSMM::request_state_transfer (void* recv_ctx,
     assert(sst_req_len >= 0);
     int const str_proto_ver(get_str_proto_ver(group_proto_ver));
 
-    StateRequest* const req(prepare_state_request(sst_req, sst_req_len,
-                                                  group_proto_ver,
-                                                  str_proto_ver,
-                                                  group_uuid, cc_seqno));
+    std::shared_ptr<const StateRequest> req(
+        prepare_state_request(sst_req, sst_req_len, group_proto_ver,
+                                str_proto_ver, group_uuid, cc_seqno));
+
 #ifdef PXC
     sst_mutex_.lock();
 #else
@@ -1098,7 +1098,7 @@ ReplicatorSMM::request_state_transfer (void* recv_ctx,
     // We should not wait for completion of the SST or to handle it
     // results if an error has occurred when sending the request:
 
-    long ret = send_state_request(req, str_proto_ver, unsafe);
+    long ret = send_state_request(req.get(), str_proto_ver, unsafe);
     if (ret < 0)
     {
         // If the state transfer request failed, then
@@ -1108,7 +1108,6 @@ ReplicatorSMM::request_state_transfer (void* recv_ctx,
             ist_prepared_ = false;
             (void)ist_receiver_.finished();
         }
-        delete req;
         return ret;
     }
 
@@ -1122,7 +1121,7 @@ ReplicatorSMM::request_state_transfer (void* recv_ctx,
     st_.mark_unsafe();
 
     GU_DBUG_SYNC_WAIT("before_send_state_request");
-    send_state_request(req, str_proto_ver);
+    send_state_request(req.get(), str_proto_ver);
 
     state_.shift_to(S_JOINING);
     sst_state_ = SST_WAIT;
@@ -1204,7 +1203,6 @@ ReplicatorSMM::request_state_transfer (void* recv_ctx,
             /* this is now being done as part of the caller action. */
             // close();
 
-            delete req;
             return -ECANCELED;
         }
         else if (sst_uuid_ != group_uuid)
@@ -1472,7 +1470,6 @@ ReplicatorSMM::request_state_transfer (void* recv_ctx,
     }
 #endif /* NDEBUG */
 
-    delete req;
 #ifdef PXC
     return 0;
 #endif /* PXC */
