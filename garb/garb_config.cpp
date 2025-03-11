@@ -16,6 +16,7 @@ namespace po = boost::program_options;
 #include <fstream>
 #ifdef PXC
 #include <errno.h>
+#include <regex>
 #endif /* PXC */
 
 namespace garb
@@ -95,6 +96,12 @@ Config::Config (int argc, char* argv[])
     store(po::command_line_parser(argc, argv).
           options(cmdline_opts).positional(p).run(), vm);
     notify(vm);
+
+    if (!validate())
+    {
+        exit_ = true;
+        return;
+    }
 
     if (vm.count("help"))
     {
@@ -196,6 +203,45 @@ Config::Config (int argc, char* argv[])
     }
 
     gu_crc32c_configure();
+}
+
+bool Config::isValidStringRegex(const std::string& str)
+{
+    // Only ASCII printable characters (space to ~)
+    static const std::regex validPattern("^[ -~]+$");
+    return std::regex_match(str, validPattern);
+}
+
+bool Config::validateSingleOption(const std::string& option,
+                                  const std::string& optionName)
+{
+    if (option.empty() || isValidStringRegex(option))
+    {
+        return true;
+    }
+    std::cerr << "\n'" << optionName
+              << "' option contains non-printable ASCII characters\n";
+    return false;
+}
+
+/* Do a sanity check for all string options, if they contain only valid
+characters */
+bool Config::validate()
+{
+    return validateSingleOption(name_, "name")
+           && validateSingleOption(address_, "address")
+           && validateSingleOption(group_, "group")
+           && validateSingleOption(sst_, "sst")
+           && validateSingleOption(donor_, "donor")
+           && validateSingleOption(options_, "options")
+           && validateSingleOption(log_, "log")
+           && validateSingleOption(recv_script_, "recv-script")
+           && validateSingleOption(post_recv_script_, "post-recv-script")
+           && validateSingleOption(workdir_, "workdir")
+#if defined(WITH_COREDUMPER) && WITH_COREDUMPER
+           && validateSingleOption(coredumper_, "coredumper")
+#endif
+           && validateSingleOption(cfg_, "cfg");
 }
 
 std::ostream& operator << (std::ostream& os, const Config& c)
