@@ -54,6 +54,11 @@ private:
 #endif
     bool exit_; /* Exit on --help or --version */
 
+    bool isValidStringRegex(const std::string& str);
+    bool validateSingleOption(const std::string& option,
+                              const std::string& optionName);
+    bool validate();
+
 }; /* class Config */
 
 std::ostream& operator << (std::ostream&, const Config&);
