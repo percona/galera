@@ -3696,6 +3696,12 @@ wsrep_status_t galera::ReplicatorSMM::cert_and_catch(
 {
     try
     {
+#ifndef NDEBUG
+        // debug sync point just after cert_and_catch()
+        std::shared_ptr<void> dbug_sync(nullptr, [](void *ptr) {
+            GU_DBUG_SYNC_WAIT("after_cert_and_catch");
+        });
+#endif
         return cert(trx, ts);
     }
     catch (std::exception& e)
