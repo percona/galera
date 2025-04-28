@@ -48,6 +48,7 @@ namespace gcomm
         static std::string const PcIgnoreQuorum           ;
         static std::string const PcIgnoreSb               ;
         static std::string const PcNpvo                   ;
+        static std::string const PcBootstrap              ;
         static std::string const PcVersion                ;
         static std::string const PcWaitPrim               ;
         static std::string const PcWaitPrimTimeout        ;

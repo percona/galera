@@ -102,6 +102,7 @@ static const char* Defaults[] =
     "pc.ignore_sb",                "false",
     "pc.linger",                   "PT20S",
     "pc.npvo",                     "false",
+    "pc.bootstrap",                "0",
     "pc.recovery",                 "true",
     "pc.version",                  "0",
     "pc.wait_prim",                "true",

@@ -55,6 +55,7 @@ namespace gcomm
     std::string const Defaults::PcIgnoreQuorum          = "false";
     std::string const Defaults::PcIgnoreSb              = PcIgnoreQuorum;
     std::string const Defaults::PcNpvo                  = "false";
+    std::string const Defaults::PcBootstrap             = "0";
     std::string const Defaults::PcVersion               = "0";
     std::string const Defaults::PcWaitPrim              = "true";
     std::string const Defaults::PcWaitPrimTimeout       = "PT30S";

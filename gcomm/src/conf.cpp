@@ -187,7 +187,7 @@ gcomm::Conf::register_params(gu::Config& cnf)
     GCOMM_CONF_ADD_DEFAULT(PcAnnounceTimeout);
     GCOMM_CONF_ADD        (PcLinger);
     GCOMM_CONF_ADD_DEFAULT(PcNpvo);
-    GCOMM_CONF_ADD        (PcBootstrap);
+    GCOMM_CONF_ADD_DEFAULT(PcBootstrap);
     GCOMM_CONF_ADD_DEFAULT(PcWaitPrim);
     GCOMM_CONF_ADD_DEFAULT(PcWaitPrimTimeout);
     GCOMM_CONF_ADD_DEFAULT(PcWaitRestoredPrimTimeout);
