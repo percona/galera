@@ -19,6 +19,21 @@ signal_handler (int signum)
     global_gcs->close();
 }
 
+std::string
+RecvLoop::rc_to_string(int c) {
+    if (c == return_code::OK) return "OK";
+    if (c == return_code::DONOR_DISAPPEARED) return "DONOR_DISAPPEARED";
+    if (c == return_code::SST_REQUEST_FAILURE) return "SST_REQUEST_FAILURE";
+    if (c == return_code::SST_SCRIPT_TERMINATED) return "SST_SCRIPT_TERMINATED";
+    if (c == return_code::GENERIC_FAILURE) return "GENERIC_FAILURE";
+    return std::to_string(c);
+}
+
+int RecvLoop::return_code(int basic, int extended) {
+    return config_.extended_exit_codes() ? extended : basic;
+}
+
+
 void
 RecvLoop::close_connection(bool explicit_close)
 {
@@ -159,54 +174,65 @@ RecvLoop::one_loop()
                             auto st = gcs_.state_for(sst_source_uuid_);
                             if(st == GCS_NODE_STATE_MAX) {
                                 log_info << "Donor is no longer in the cluster, interrupting script";
+                                rcode_ = return_code(1, return_code::DONOR_DISAPPEARED);
                                 sst_terminated_ = true;
                                 process_->terminate();
                                 break;
                             } else if(st != GCS_NODE_STATE_DONOR) {
-                                // The donor is going back to SYNCED.
-                                // It can be one of the following case:
-                                // 1. SST hasn't even started, so script is most probably still
-                                //    waiting in TCP connection
-                                // 2. SST finished, script received data
-                                // Because of the socat problem, if we end up in case 1, we have to
-                                // send kill to the whole group (script and its children) to avoid
-                                // socat hanging forever and blocking ports for next requests.
-                                // In case 1 we should simply wait for script to finish.
-                                // Unfortunately from garbd point of view it is not trivial to distinguish
-                                // these two cases. That's why we always terminate the whole group
-                                // just after receiving sst.
-                                // If any post-processing of received SST has to be done, it should be done
-                                // in post-sst-script.
-                                //
-                                // Having said that, we will end up in 'if (sst_terminated_)' or
-                                // 'else if(sst_ended_)' branch below randomly, (race between err_log_thd
-                                // and sst_status_thd which is not good in general, but it is as it is.
-
-                                // Because of the above, we will introduce a little ugly hack here.
-                                // After successful SST Donor exits from 'donor' state immediately.
-                                // That means we've got a race condition between err_log_thd and sst_status_thd.
-                                // Whatever happens first:
-                                // 1. script exits and we catch it in err_log_thd
-                                // 2. Donor exits from 'donor' state and we catch it in sst_status_thd
-                                // we will either wait for script to finish or terminate it with pgkill
-                                // There is no easy and reliable way to synchronize it, because from garbd point
-                                // of view we don't have the information about SST success/failure when handling
-                                // event of Donor moving from 'donor' state.
-                                // The hack is to wait 'a bit' to let sst-script to finish gracefully and then decide
-                                // if we still need to kill it or not.
-                                // It is up to SST script to exit immediately after receiving SST.
-                                // If any post processing has to be done it has to be done in post-sst-script.
-
-                                // Wait up to 5 seconds for recv-script to finish
-                                std::unique_lock<std::mutex> lock(script_end_mtx_);
-                                script_end_cv_.wait_for(lock, std::chrono::seconds(5));
-
-                                if (sst_ended_) {
-                                    log_info << "Donor no longer in donor state, sst-script finished.";
+                                if (config_.wait_for_recv_script_exit()) {
+                                    // The donor is going back to SYNCED, but
+                                    // we are asked to wait for recv-script to finish.
+                                    // It is up to the recv-script to handle all timeouts, etc...
+                                    // If it is stuck, garbd will wait infinitely.
+                                    rcode_ = process_->wait();
+                                    log_info << "sst-script finished with code (wait): " << rcode_;
                                 } else {
-                                    log_info << "Donor no longer in donor state, but sst-script hasn't finish. Interrupting script.";
-                                    sst_terminated_ = true;
-                                    process_->terminate();
+                                    // The donor is going back to SYNCED.
+                                    // It can be one of the following case:
+                                    // 1. SST hasn't even started, so script is most probably still
+                                    //    waiting in TCP connection
+                                    // 2. SST finished, script received data
+                                    // Because of the socat problem, if we end up in case 1, we have to
+                                    // send kill to the whole group (script and its children) to avoid
+                                    // socat hanging forever and blocking ports for next requests.
+                                    // In case 2 we should simply wait for script to finish.
+                                    // Unfortunately from garbd point of view it is not trivial to distinguish
+                                    // these two cases. That's why we always terminate the whole group
+                                    // just after receiving sst.
+                                    // If any post-processing of received SST has to be done, it should be done
+                                    // in post-sst-script.
+                                    //
+                                    // Having said that, we will end up in 'if (sst_terminated_)' or
+                                    // 'else if(sst_ended_)' branch below randomly, (race between err_log_thd
+                                    // and sst_status_thd which is not good in general, but it is as it is.
+
+                                    // Because of the above, we will introduce a little ugly hack here.
+                                    // After successful SST Donor exits from 'donor' state immediately.
+                                    // That means we've got a race condition between err_log_thd and sst_status_thd.
+                                    // Whatever happens first:
+                                    // 1. script exits and we catch it in err_log_thd
+                                    // 2. Donor exits from 'donor' state and we catch it in sst_status_thd
+                                    // we will either wait for script to finish or terminate it with pgkill
+                                    // There is no easy and reliable way to synchronize it, because from garbd point
+                                    // of view we don't have the information about SST success/failure when handling
+                                    // event of Donor moving from 'donor' state.
+                                    // The hack is to wait 'a bit' to let sst-script to finish gracefully and then decide
+                                    // if we still need to kill it or not.
+                                    // It is up to SST script to exit immediately after receiving SST.
+                                    // If any post processing has to be done it has to be done in post-sst-script.
+                                    // Wait up to 5 seconds for recv-script to finish
+                                    std::unique_lock<std::mutex> lock(script_end_mtx_);
+                                    script_end_cv_.wait_for(lock, std::chrono::seconds(5));
+
+                                    if (sst_ended_) {
+                                        log_info << "Donor no longer in donor state, sst-script finished with code (nowait): " << rcode_;
+                                        // rcode_ was resolved basing on script's exit code and post-sst script's exit code
+                                    } else {
+                                        log_info << "Donor no longer in donor state, but sst-script hasn't finish. Interrupting script.";
+                                        rcode_ = return_code(1, return_code::SST_SCRIPT_TERMINATED);
+                                        sst_terminated_ = true;
+                                        process_->terminate();
+                                    }
                                 }
                                 break;
                             }
@@ -227,21 +253,30 @@ RecvLoop::one_loop()
                     // Note that in case of termination, both sst_terminated_ and
                     // sst_ended_ flags are set. We need to test sst_terminated_ first.
                     if (sst_terminated_) {
-                        log_info << "SST script already terminated";
-                        rcode_ = process_->wait();
+                        // Donor exited in the middle of transfer
+                        // or garbd had to terminate sst script after the transfer (sst script didn't self-exited)
+                        log_info << "SST script has been terminated";
+                        process_->wait();
                         sst_err_log_.join();
                         sst_out_log_.join();
                         sst_status_keep_running_ = false;
                         sst_status_thread_.join();
-                        rcode_ = 1;
-                        log_info << "Exiting main loop";
+                        log_info << "Exiting main loop with code " << rc_to_string(rcode_);
                         return true;
                     } else if(sst_ended_) {
                         // Good path: we decided to close the connection after the receiver script closed its
                         // standard output. We wait for it to exit and return its error code.
-                        log_info << "Waiting for SST script to stop";
-                        rcode_ = process_->wait();
-                        log_info << "SST script stopped with exit code: " << rcode_;
+                        // In case when config_.wait_for_recv_script_exit() == false, we are not asked to wait
+                        // for sst script finish. If we are here, it means that the script finished
+                        // but we still need to get its exit code.
+                        // On the other hand, if wait_for_recv_script_exit() == true, we already waited
+                        // when we detected that donor moved back to synced state. At that time we already
+                        // collected exit code of the script.
+                        if (process_->waitable()) {
+                            log_info << "Waiting for SST script to finish";
+                            rcode_ = process_->wait();
+                            log_info << "SST script finished with exit code: " << rcode_;
+                        }
                         sst_err_log_.join();
                         sst_out_log_.join();
                         sst_status_keep_running_ = false;
@@ -267,7 +302,7 @@ RecvLoop::one_loop()
                             log_info << "post-recv-script finished with exit code: " << rcode_;
                         }
 
-                        log_info << "Exiting main loop";
+                        log_info << "Exiting main loop with code " << rc_to_string(rcode_);
                         return true;
                     } else {
                         // Error path: we are closing the connection because there is an SST error,
@@ -281,13 +316,14 @@ RecvLoop::one_loop()
                         sst_out_log_.join();
                         sst_status_keep_running_ = false;
                         sst_status_thread_.join();
-                        log_info << "Exiting main loop";
-                        rcode_ = 1;
+                        rcode_ = return_code(1, return_code::SST_REQUEST_FAILURE);
+                        log_info << "Exiting main loop with code " << rc_to_string(rcode_);
                         return true;
                     }
                 } else {
-                        log_info << "Exiting main loop";
-                        rcode_ = 0;
+                        // no custom SST script
+                        rcode_ = return_code::OK;
+                        log_info << "Exiting main loop with code " << rc_to_string(rcode_);
                         return true;
                 }
             }
@@ -341,7 +377,7 @@ RecvLoop::loop()
         {
             log_error << e.what();
             close_connection();
-            rcode_ = 1;
+            rcode_ = return_code(1, return_code::GENERIC_FAILURE);
             switch (e.get_errno())
             {
                 case -GCS_CLOSED_ERROR:

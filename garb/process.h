@@ -86,6 +86,7 @@ class process {
   const char *cmd() { return str_; }
   void terminate();
   void interrupt();
+  bool waitable() { return (pid_ != 0); }
 };
 
 #endif /* PROCASS_H */
