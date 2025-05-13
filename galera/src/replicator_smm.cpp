@@ -585,7 +585,6 @@ void galera::ReplicatorSMM::apply_trx(void* recv_ctx, TrxHandleSlave& ts)
 #endif /* PXC */
 
     ApplyOrder ao(ts);
-    CommitOrder co(ts, co_mode_);
 
     TX_SET_STATE(ts, TrxHandle::S_APPLYING);
 
@@ -740,7 +739,8 @@ out:
 
 
 wsrep_status_t galera::ReplicatorSMM::replicate(TrxHandleMaster& trx,
-                                                wsrep_trx_meta_t* meta)
+                                                wsrep_trx_meta_t* meta,
+                                                const wsrep_seq_cb_t* seq_cb)
 {
     assert(trx.locked());
     assert(!(trx.flags() & TrxHandle::F_ROLLBACK));
@@ -806,7 +806,7 @@ wsrep_status_t galera::ReplicatorSMM::replicate(TrxHandleMaster& trx,
         trx.finalize(last_committed());
         trx.unlock();
         assert (act.buf == NULL); // just a sanity check
-        rcode = gcs_.replv(actv, act, true);
+        rcode = gcs_.replv(actv, act, true, seq_cb);
 
         GU_DBUG_SYNC_WAIT("after_replicate_sync")
         trx.lock();
