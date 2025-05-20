@@ -180,7 +180,14 @@ if psi:
 
 opt_flags = opt_flags + ' -DPXC'
 
-GALERA_VER = ARGUMENTS.get('version', '4.21')
+# parse psi flag option
+psi        = int(ARGUMENTS.get('psi', 0))
+if psi:
+    opt_flags = opt_flags + ' -DHAVE_PSI_INTERFACE'
+
+opt_flags = opt_flags + ' -DPXC'
+
+GALERA_VER = ARGUMENTS.get('version', '4.22')
 GALERA_REV = ARGUMENTS.get('revno', 'XXXX')
 
 # Attempt to read from file if not given
