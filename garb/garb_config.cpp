@@ -46,8 +46,10 @@ Config::Config (int argc, char* argv[])
       log_     (),
       cfg_     (),
       recv_script_ (),
+      wait_for_recv_script_exit_(false),
       post_recv_script_(),
       workdir_ (),
+      extended_exit_codes_(false),
 #if defined(WITH_COREDUMPER) && WITH_COREDUMPER
       coredumper_ (),
 #endif
@@ -75,6 +77,8 @@ Config::Config (int argc, char* argv[])
         ("log,l",       po::value<std::string>(&log_),         "Log file")
         ("recv-script", po::value<std::string>(&recv_script_), "SST request receive script")
         ("post-recv-script", po::value<std::string>(&post_recv_script_), "Post SST script")
+        ("wait-for-recv-script-exit", "Wait for recv-script graceful exit (don't kill it after transfer).")
+        ("extended-exit-codes", "Report extended exit codes")
         ("workdir,w",po::value<std::string>(&workdir_),
          "Daemon working directory")
         ;
@@ -150,6 +154,13 @@ Config::Config (int argc, char* argv[])
     if (vm.count("daemon"))
     {
         daemon_ = true;
+    }
+
+    if (vm.count("wait-for-recv-script-exit")) {
+        wait_for_recv_script_exit_ = true;
+    }
+    if (vm.count("extended-exit-codes")) {
+        extended_exit_codes_ = true;
     }
 
     /* Seeing how https://svn.boost.org/trac/boost/ticket/850 is fixed long and
