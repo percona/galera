@@ -78,7 +78,7 @@ ReplicatorSMM::sst_received(const wsrep_gtid_t& state_id,
                             int                const rcode)
 {
 #ifdef PXC
-    if (rcode != -ECANCELED && rcode != -EPIPE)
+    if (rcode != -ECANCELED && rcode != -EPIPE && rcode != -EAGAIN)
     {
         log_info << "SST received: " << state_id.uuid << ':' << state_id.seqno;
     }
@@ -113,17 +113,28 @@ ReplicatorSMM::sst_received(const wsrep_gtid_t& state_id,
     sst_cond_.signal();
 
 #ifdef PXC
-    // If the donor server crashed while SST is in progress, then SST script
-    // aborts with error 32 (Broken pipe) after the timeout is exceeded.  When
-    // this happens there is nothing that we can to do recover. So, we must
-    // abort.
-    if (rcode == -EPIPE)
-    {
-        log_fatal << "State transfer request failed unrecoverably: "
-                  << -rcode << " (" << strerror(-rcode) << "). Most likely "
-                  << "it is due to inability to communicate with the "
-                  << "cluster primary component. Restart required.";
-        abort();
+    /* SST script may exit with EAGAIN code. This is the hint that data
+     directory was not deleted and it is up to caller to decide what to do.
+     (eg. SST script pre-check failed because of some external binary missing
+     or because sst-info file was not received because of network failure)
+     Here, as the caller, we decide to mark back Galera state as safe to avoid
+     forced SST next time, but try with IST */
+    switch (rcode) {
+        case -EAGAIN:
+            log_fatal << "SST finished with code: " << -rcode << ". "
+                    << "It means that SST failed before wiping out the data "
+                    << "directory. Saving node state to retry with IST instead "
+                    << "of full SST after restart.";
+            st_.mark_safe();
+            [[fallthrough]];
+        case -EPIPE:
+            log_fatal << "State transfer request failed unrecoverably: "
+                    << -rcode << " (" << strerror(-rcode) << "). Most likely "
+                    << "it is due to inability to communicate with the "
+                    << "cluster primary component. Please check the error log "
+                    << "for details. Restart required.";
+            abort();
+            break;
     }
 
     // We need to check the state only after we signalized about completion
