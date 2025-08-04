@@ -1,6 +1,10 @@
 #
-# Copyright (C) 2020 Codership Oy <info@codership.com>
+# Copyright (C) 2025 Codership Oy <info@codership.com>
 #
+
+# -D_GLIBCXX_DEBUG makes linking with Boost program options
+# library fail, so disable it for garbd.
+remove_definitions(-D_GLIBCXX_DEBUG)
 
 add_executable(garbd
   garb_config.cpp
@@ -30,7 +34,7 @@ target_compile_options(garbd
   )
 
 target_link_libraries(garbd gcs4garb gcomm gcache
-  ${Boost_PROGRAM_OPTIONS_LIBRARIES})
+  ${Boost_PROGRAM_OPTIONS_LIBRARY})
 
 set_target_properties( garbd PROPERTIES RUNTIME_OUTPUT_DIRECTORY
   ${CMAKE_CURRENT_BINARY_DIR}/../bin/ )
