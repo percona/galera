@@ -77,7 +77,7 @@ namespace gcache
 
         void discard (BufferHeader* bh)
         {
-            assert(bh >= mmap_.ptr);
+            assert(bh >= mmap_.get_ptr());
             assert(reinterpret_cast<uint8_t*>(bh) + bh->size <= next_);
             assert(bh->size > 0);
             assert(bh->seqno_g != SEQNO_NONE);
