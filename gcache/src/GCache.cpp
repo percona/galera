@@ -58,20 +58,12 @@ namespace gcache
         gid       (),
         mem       (params.mem_size(), seqno2ptr, params.debug()),
         rb        (pcb, params.rb_name(), params.rb_size(), seqno2ptr, gid,
-<<<<<<< HEAD
                    params.debug(), params.recover(), params.encrypt(),
                    params.encryption_cache_page_size(),
                    std::min(params.encryption_cache_size(), params.rb_size()),
                    mk_provider),
-        ps        (params.dir_name(),
-||||||| 216f0689
-                   params.debug(), params.recover()),
-        ps        (params.dir_name(),
-=======
-                   params.debug(), params.recover()),
         ps        (*this,
                    params.dir_name(),
->>>>>>> release_26.4.23
                    params.keep_pages_size(),
                    params.page_size(),
                    params.debug(),

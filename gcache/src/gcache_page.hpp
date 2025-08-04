@@ -25,16 +25,13 @@ namespace gcache
     {
     public:
 
-<<<<<<< HEAD
-        Page (void* ps, const std::string& name, size_t size, int dbg, bool encrypt, size_t encrypt_cache_page_size, size_t encrypt_cache_pages_count);
-||||||| 216f0689
-        Page (void* ps, const std::string& name, size_t size, int dbg);
-=======
         Page (void*              ps,
               const std::string& name,
               size_t             size,
-              int                dbg);
->>>>>>> release_26.4.23
+              int                dbg,
+              bool               encrypt,
+              size_t             encrypt_cache_page_size,
+              size_t encrypt_cache_pages_count);
         ~Page () {}
 
         void* malloc  (size_type size);
@@ -153,30 +150,18 @@ namespace gcache
     private:
 
         gu::FileDescriptor fd_;
-<<<<<<< HEAD
         std::shared_ptr<gu::IMMap>  mmapptr_;  // keep mmap_ member as the reference
         gu::IMMap&         mmap_;
-||||||| 216f0689
-        gu::MMap           mmap_;
-=======
-        gu::MMap           mmap_;
         seqno_t            seqno_max_; // highest seqno assigned to buffer
->>>>>>> release_26.4.23
         void* const        ps_;
         uint8_t*           next_;
         size_t             space_;
-<<<<<<< HEAD
         size_t             used_;
+        size_t             mapped_; // buffers mapped in seqno2ptr map
 #ifdef PXC
         size_t             size_;
         size_t             min_space_;
 #endif /* PXC */
-||||||| 216f0689
-        size_t             used_;
-=======
-        size_t             used_;   // allocated - freed buffers
-        size_t             mapped_; // buffers mapped in seqno2ptr map
->>>>>>> release_26.4.23
         int                debug_;
         bool               closed_; // page not available any more
 

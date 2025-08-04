@@ -853,19 +853,11 @@ test_gcs_group_find_donor(bool const a)
 
     // handle dangling comma.
     donor = gcs_group_find_donor(&group, sv, joiner, SARGS("home3,"),
-<<<<<<< HEAD
                                  empty_gtid, false);
-    ck_assert(donor == 0);
-||||||| 216f0689
-                                 empty_gtid);
-    ck_assert(donor == 0);
-=======
-                                 empty_gtid);
     int expect_donor(a ? 1 : arbitr);
     ck_assert_msg(donor == expect_donor,
                   "stateless: %d, expected donor: %d, result donor: %d",
                   a, expect_donor, donor);
->>>>>>> release_26.4.23
 
     // ========== ist ==========
     // by name.

@@ -56,37 +56,27 @@ gcache::Page::drop_fs_cache() const
 #endif
 }
 
-<<<<<<< HEAD
-gcache::Page::Page (void* ps, const std::string& name, size_t size, int dbg, bool encrypt, size_t encrypt_cache_page_size, size_t encrypt_cache_size)
-||||||| 216f0689
-gcache::Page::Page (void* ps, const std::string& name, size_t size, int dbg)
-=======
 gcache::Page::Page (void* const        ps,
                     const std::string& name,
                     size_t             size,
-                    int                dbg)
->>>>>>> release_26.4.23
+                    int                dbg,
+                    bool               encrypt,
+                    size_t             encrypt_cache_page_size,
+                    size_t encrypt_cache_size)
     :
 #ifdef PXC
 #ifdef HAVE_PSI_INTERFACE
     fd_   (name, WSREP_PFS_INSTR_TAG_GCACHE_PAGE_FILE, size, true, false),
 #else
     fd_   (name, size, true, false),
-<<<<<<< HEAD
 #endif /* HAVE_PSI_INTERFACE */
 #else
     fd_   (name, size, true, false),
 #endif /* PXC */
     mmapptr_   (gu::MMapFactory::create(fd_, encrypt, encrypt_cache_page_size, encrypt_cache_size, false, 0)),
     mmap_      (*mmapptr_),
-||||||| 216f0689
-    mmap_ (fd_),
-=======
-    mmap_ (fd_),
     seqno_max_(SEQNO_NONE),
->>>>>>> release_26.4.23
     ps_   (ps),
-<<<<<<< HEAD
     next_ (static_cast<uint8_t*>(mmap_.get_ptr())),
     space_(mmap_.get_size()),
     used_ (0),
@@ -94,20 +84,8 @@ gcache::Page::Page (void* const        ps,
     size_ (mmap_.get_size()),
     min_space_ (space_),
 #endif /* PXC */
-    debug_(dbg)
-||||||| 216f0689
-    next_ (static_cast<uint8_t*>(mmap_.ptr)),
-    space_(mmap_.size),
-    used_ (0),
-    debug_(dbg)
-=======
-    next_ (static_cast<uint8_t*>(mmap_.ptr)),
-    space_(mmap_.size),
-    used_(0),
-    mapped_(0),
     debug_(dbg),
     closed_(false)
->>>>>>> release_26.4.23
 {
     log_info << "Created page " << name << " of size " << space_
              << " bytes";

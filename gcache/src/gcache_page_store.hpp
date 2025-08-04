@@ -124,20 +124,11 @@ namespace gcache
         size_t            total_size_;
         pthread_attr_t    delete_page_attr_;
         int               debug_;
-<<<<<<< HEAD
-#ifndef GCACHE_DETACH_THREAD
-        pthread_t         delete_thr_;
-#endif /* GCACHE_DETACH_THREAD */
+        mutable pthread_t delete_thr_;
+
         bool              encrypt_;
         size_t            encrypt_cache_page_size_;
         size_t            encrypt_cache_size_;
-||||||| 216f0689
-#ifndef GCACHE_DETACH_THREAD
-        pthread_t         delete_thr_;
-#endif /* GCACHE_DETACH_THREAD */
-=======
-        mutable pthread_t delete_thr_;
->>>>>>> release_26.4.23
 
         void new_page    (size_type size);
 

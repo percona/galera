@@ -303,18 +303,12 @@ private:
             last_verify_error_ = SSL_get_verify_result(ssl_);
             return error;
         }
-<<<<<<< HEAD
-        case SSL_ERROR_ZERO_RETURN:
-            return eof;
-||||||| 216f0689
-=======
         case SSL_ERROR_ZERO_RETURN:
         {
             last_error_ = 0;
             last_error_category_ = &gu_asio_ssl_category;
             last_verify_error_ = SSL_get_verify_result(ssl_);
             return eof;
->>>>>>> release_26.4.23
         }
         }
         log_warn << "Unhandled SSL error " << ssl_error;

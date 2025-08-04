@@ -50,9 +50,6 @@ make_page_name (const std::string& base_name, size_t count)
 static void
 remove_file (const std::string& file_name)
 {
-<<<<<<< HEAD
-    char* const file_name (static_cast<char*>(arg));
-
 #ifdef PXC
 #ifdef HAVE_PSI_INTERFACE
     pfs_instr_callback(WSREP_PFS_INSTR_TYPE_THREAD,
@@ -62,14 +59,7 @@ remove_file (const std::string& file_name)
 #endif /* HAVE_PSI_INTERFACE */
 #endif /* PXC */
 
-    if (NULL != file_name)
-||||||| 216f0689
-    char* const file_name (static_cast<char*>(arg));
-
-    if (NULL != file_name)
-=======
     if (file_name.length() > 0)
->>>>>>> release_26.4.23
     {
         if (::remove(file_name.c_str()))
         {
@@ -143,18 +133,9 @@ discard_page(void* __restrict__ a)
     pthread_exit(NULL);
 }
 
-<<<<<<< HEAD
-/*
- * Returns false if there are no more pages to be deleted (either
- * the queue is empty or if the first page is in use).
- * Otherwise, returns true.
-*/
-||||||| 216f0689
-=======
 /* This method does minimum work while holding global lock and then
  * delegates seqno2ptr map cleanup to a dedicated thread. If there is a
  * previously launched thread it will be joined by the new one. */
->>>>>>> release_26.4.23
 bool
 gcache::PageStore::delete_page ()
 {
@@ -180,37 +161,12 @@ gcache::PageStore::delete_page ()
     seqno_map_.set_low_limit(page->seqno_max());
     page->close();
 
-<<<<<<< HEAD
-#ifdef GCACHE_DETACH_THREAD
-    pthread_t delete_thr_;
-#else
-    if (delete_thr_ != pthread_t(-1)) pthread_join (delete_thr_, NULL);
-#endif /* GCACHE_DETACH_THERAD */
-
-#ifdef PXC
-    int err = gu_thread_create (&delete_thr_, &delete_page_attr_, remove_file,
-                                file_name);
-#else
-    int err = pthread_create (&delete_thr_, &delete_page_attr_, remove_file,
-                              file_name);
-#endif /* PXC */
-||||||| 216f0689
-#ifdef GCACHE_DETACH_THREAD
-    pthread_t delete_thr_;
-#else
-    if (delete_thr_ != pthread_t(-1)) pthread_join (delete_thr_, NULL);
-#endif /* GCACHE_DETACH_THERAD */
-
-    int err = pthread_create (&delete_thr_, &delete_page_attr_, remove_file,
-                              file_name);
-=======
     /* if there is currently another thread running it will be joined in
      * this new thread */
     pthread_t const saved(delete_thr_);
     int err = pthread_create(&delete_thr_, &delete_page_attr_, discard_page,
                              new delete_thread_arg(seqno_map_, *page,
                                                    delete_thr_, debug_));
->>>>>>> release_26.4.23
     if (0 != err)
     {
         delete_thr_ = saved;
@@ -283,17 +239,9 @@ gcache::PageStore::reset ()
 inline void
 gcache::PageStore::new_page (size_type size)
 {
-<<<<<<< HEAD
-    Page* const page(new Page
-                     (this, make_page_name (base_name_, count_), size, debug_,
-                      encrypt_, encrypt_cache_page_size_, encrypt_cache_size_));
-||||||| 216f0689
-    Page* const page(new Page
-                     (this, make_page_name (base_name_, count_), size, debug_));
-=======
-    Page* const page(new Page(this, make_page_name(base_name_, count_),
-                              size, debug_));
->>>>>>> release_26.4.23
+    Page* const page(new Page(this, make_page_name (base_name_, count_), size,
+                              debug_, encrypt_, encrypt_cache_page_size_,
+                              encrypt_cache_size_));
 
     pages_.push_back (page);
     total_size_ += page->size();
@@ -324,15 +272,9 @@ gcache::PageStore::PageStore (SeqnoMap&          seqno_map,
     delete_page_attr_(),
     debug_     (dbg & DEBUG)
     , delete_thr_(pthread_t(-1))
-<<<<<<< HEAD
-#endif /* GCACHE_DETACH_THREAD */
     , encrypt_(encrypt)
     , encrypt_cache_page_size_(encrypt_cache_page_size)
     , encrypt_cache_size_(encrypt_cache_size)
-||||||| 216f0689
-#endif /* GCACHE_DETACH_THREAD */
-=======
->>>>>>> release_26.4.23
 {
     int err = pthread_attr_init (&delete_page_attr_);
 

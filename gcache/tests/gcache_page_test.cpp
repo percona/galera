@@ -59,15 +59,8 @@ START_TEST(test1)
     ssize_t const keep_size = 1;
     ssize_t const page_size = 2 + bh_size;
 
-<<<<<<< HEAD
-    gcache::PageStore ps (dir_name, keep_size, page_size, 0 /* debug */, 0 /* keep_page_count */);
-||||||| 216f0689
-    gcache::PageStore ps (dir_name, keep_size, page_size, 0, false);
-=======
     SeqnoMapStub sm;
-
-    gcache::PageStore ps (sm, dir_name, keep_size, page_size, DEBUG, false);
->>>>>>> release_26.4.23
+    gcache::PageStore ps (sm, dir_name, keep_size, page_size, 0 /* debug */, 0 /* keep_page_count */);
 
     ck_assert_msg(ps.count()       == 0,"expected count 0, got %zu",ps.count());
     ck_assert_msg(ps.total_pages() == 0,"expected 0 pages, got %zu",ps.total_pages());
@@ -111,15 +104,8 @@ START_TEST(test2)
     ssize_t const keep_size = 1;
     ssize_t page_size = (1 << 20) + bh_size;
 
-<<<<<<< HEAD
-    gcache::PageStore ps (dir_name, keep_size, page_size, 0 /* debug */, 0 /* keep_page_count */);
-||||||| 216f0689
-    gcache::PageStore ps (dir_name, keep_size, page_size, 0, false);
-=======
     SeqnoMapStub sm;
-
-    gcache::PageStore ps (sm, dir_name, keep_size, page_size, 0, false);
->>>>>>> release_26.4.23
+    gcache::PageStore ps (sm, dir_name, keep_size, page_size, 0 /* debug */, 0 /* keep_page_count */);
 
     mark_point();
 
@@ -147,16 +133,10 @@ START_TEST(test3) // check that all page size is efficiently used
     ssize_t const keep_size = 1;
     ssize_t const page_size = 1024;
 
-<<<<<<< HEAD
-    gcache::PageStore ps (dir_name, keep_size, page_size, 0 /* debug */, 0 /* keep_page_count */);
-||||||| 216f0689
-    gcache::PageStore ps (dir_name, keep_size, page_size, 0, false);
-=======
     SeqnoMapStub sm;
 
     {
-    gcache::PageStore ps (sm, dir_name, keep_size, page_size, 0, false);
->>>>>>> release_26.4.23
+    gcache::PageStore ps (sm, dir_name, keep_size, page_size, 0 /* debug */, 0 /* keep_page_count */);
 
     mark_point();
 
