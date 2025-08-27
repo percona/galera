@@ -46,6 +46,7 @@ namespace gu
 
         virtual void open(const gu::URI&) GALERA_OVERRIDE;
         virtual bool is_open() const GALERA_OVERRIDE;
+        virtual void shutdown() GALERA_OVERRIDE;
         virtual void close() GALERA_OVERRIDE;
         virtual void shut_down() GALERA_OVERRIDE;
         virtual void bind(const gu::AsioIpAddress&) GALERA_OVERRIDE;
@@ -117,7 +118,6 @@ namespace gu
 
         void set_non_blocking(bool);
 
-        void shutdown();
         std::string debug_print() const;
 
         // Data members
@@ -241,6 +241,7 @@ namespace gu
     public:
         AsioAcceptorReact(AsioIoService&, const std::string& scheme);
         virtual void open(const gu::URI&) GALERA_OVERRIDE;
+        virtual bool is_open() const GALERA_OVERRIDE;
         virtual void listen(const gu::URI&) GALERA_OVERRIDE;
         virtual void close() GALERA_OVERRIDE;
         virtual void async_accept(

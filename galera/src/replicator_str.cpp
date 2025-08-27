@@ -693,7 +693,33 @@ out:
 
     local_monitor_.leave(lo);
 
-    if (join_now || rcode < 0)
+    /*
+     During the State Transfer (ST) we always go though SST script. It's
+     responsibility is to send the info to the Joiner if SST can be bypassed
+     and ST can be handled by IST. Let's consider the situation when Joiner
+     requests SST by starting SST script and IST Receiver and waits for
+     the info what will be transferred (SST+IST or only IST). At the same
+     time, on Donor side there is some delay, and sending this info to Joiner
+     is delayed.
+     Joiner timeouts and exits (aborts), because it can't get the ST. Then
+     Donor goes ahead. It starts SST script which tries to send the info that
+     only IST will be sent and starts IST Sender. But because the Joiner's
+     IST Receiver doesn't listen anymore, the Donor's IST Sender gets
+     -ECONNREFUSED.
+     In such a case, on Donor side if we shift Galera to JOINED directly
+     after the failure without waiting for SST script to finish, we will go
+     through states: DONOR->JOINED->SYNCED.
+     Unfortunately shifting to JOINED is not signalized to application
+     (wsrep_lib), therefore wsrep_lib will see the transition DONOR->SYNCED,
+     which is prohibited on that layer.
+
+     In normal case, wsrep_lib layer is shifted to JOINED state from donor
+     thread context, when SST is finished (SST script serverd SST or informed
+     Joiner that it will serve only IST) in server_state::sst_sent() which
+     will call ReplicatorSMM::sst_sent(), where Galera will be shifted to
+     JOINED state.
+    */
+    if (join_now || (rcode < 0 && rcode != -ECONNREFUSED))
     {
         gcs_.join(gu::GTID(state_uuid_, donor_seq), rcode);
     }
