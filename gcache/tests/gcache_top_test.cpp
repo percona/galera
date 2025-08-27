@@ -16,7 +16,9 @@
 
 using namespace gcache;
 
+#ifndef NDEBUG
 static int const DEBUG = 4;
+#endif
 
 static void
 test_caching_fill_page(gcache::GCache&     gc,

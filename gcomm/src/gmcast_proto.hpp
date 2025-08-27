@@ -16,7 +16,7 @@ namespace gcomm
 {
     namespace gmcast
     {
-        class ProtoContext;
+        struct ProtoContext;
         class Proto;
         class ProtoMap;
         std::ostream& operator<<(std::ostream& os, const Proto& p);
