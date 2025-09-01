@@ -49,9 +49,11 @@ namespace gu
 
         void log(gu::datetime::Date const now)
         {
+            double percent
+                = (total_ > 0) ? (double(current_) / total_ * 100.0) : 0.0;
             log_info << prefix_ << "... "
                      << std::fixed << std::setprecision(1)
-                     << (double(current_)/total_ * 100) << "% ("
+                     << percent << "% ("
                      << current_ << '/' << total_
                      << units_ << ") complete.";
 
