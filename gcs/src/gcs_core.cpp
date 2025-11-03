@@ -866,6 +866,7 @@ core_handle_uuid_msg (gcs_core_t*     core,
                 if (state) {
                     size_t           state_len = gcs_state_msg_len (state);
                     uint8_t          state_buf[state_len];
+                    memset(state_buf, 0, state_len);  // to pacify Valgrind
                     const gu_uuid_t* state_uuid = gcs_state_msg_uuid (state);
 
                     gcs_state_msg_write (state_buf, state);
