@@ -72,6 +72,7 @@ static const char* Defaults[] =
     "gcache.encryption_cache_page_size", "32K",
     "gcache.encryption_cache_size", "16777216",
     "gcomm.thread_prio",           "",
+    "gcs.check_appl_proto",        "1",
     "gcs.fc_debug",                "0",
     "gcs.fc_auto_evict_window",    "0",
     "gcs.fc_auto_evict_threshold", "0.75",
