@@ -36,15 +36,11 @@ namespace gcomm
     std::string const Defaults::EvsJoinRetransPeriodMin = "PT0.1S";
     std::string const Defaults::EvsStatsReportPeriod    = "PT1M";
     std::string const Defaults::EvsStatsReportPeriodMin = "PT1S";
-<<<<<<< HEAD
+    std::string const Defaults::EvsDebugLogMask         = "0x1";
+    std::string const Defaults::EvsInfoLogMask          = "0";
 #ifdef PXC
     std::string const Defaults::EvsSendWindow           = "10";
 #else
-||||||| 6d8c35db
-=======
-    std::string const Defaults::EvsDebugLogMask         = "0x1";
-    std::string const Defaults::EvsInfoLogMask          = "0";
->>>>>>> codership/4.x
     std::string const Defaults::EvsSendWindow           = "4";
 #endif /* PXC */
     std::string const Defaults::EvsSendWindowMin        = "1";

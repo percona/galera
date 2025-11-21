@@ -61,17 +61,7 @@ MemStore::seqno_reset()
     {
         std::set<BufferHeader*>::iterator tmp(buf); ++buf;
 
-<<<<<<< HEAD
-#ifdef PXC
-        BufferHeader* const bh(BH_cast(*tmp));
-#else
-        BufferHeader* const bh(ptr2BH(*tmp));
-#endif /* PXC */
-||||||| 6d8c35db
-        BufferHeader* const bh(ptr2BH(*tmp));
-=======
         BufferHeader* const bh(*tmp);
->>>>>>> codership/4.x
 
         if (bh->seqno_g != SEQNO_NONE)
         {
