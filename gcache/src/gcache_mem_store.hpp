@@ -15,6 +15,25 @@
 #include <string>
 #include <set>
 
+#if defined(__clang__) && !defined(__clang_analyzer__)
+    #define IGNORE_WARNING_USE_AFTER_FREE_START \
+        _Pragma("clang diagnostic push")        \
+        _Pragma("clang diagnostic ignored \"-Wunknown-warning-option\"") \
+        _Pragma("clang diagnostic ignored \"-Wuse-after-free\"")
+    #define IGNORE_WARNING_USE_AFTER_FREE_END \
+        _Pragma("clang diagnostic pop")
+#elif defined(__GNUC__)
+    #define IGNORE_WARNING_USE_AFTER_FREE_START \
+        _Pragma("GCC diagnostic push")          \
+        _Pragma("GCC diagnostic ignored \"-Wpragmas\"") \
+        _Pragma("GCC diagnostic ignored \"-Wuse-after-free\"")
+    #define IGNORE_WARNING_USE_AFTER_FREE_END \
+        _Pragma("GCC diagnostic pop")
+#else
+    #define IGNORE_WARNING_USE_AFTER_FREE_START
+    #define IGNORE_WARNING_USE_AFTER_FREE_END
+#endif
+
 namespace gcache
 {
     class MemStore : public MemOps
@@ -114,7 +133,9 @@ namespace gcache
             {
                 if (bh != orig)
                 {
+IGNORE_WARNING_USE_AFTER_FREE_START
                     allocd_.erase(orig);
+IGNORE_WARNING_USE_AFTER_FREE_END
                     allocd_.insert(bh);
                 }
 

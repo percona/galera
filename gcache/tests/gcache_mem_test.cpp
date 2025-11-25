@@ -10,6 +10,22 @@
 
 using namespace gcache;
 
+/* Ignoring use-after-free warning is needed bacause the GCC 13.3.0 complains
+about the following call to buf1 = ms.realloc (buf1, 2 + bh_size);
+Inside realloc we cache passed pointer in 'orig' variable, then realloc original
+pointer, then use 'orig' in comparison and to erase from allocated list (see the
+implementation). The complains about 'orig' to be reused after free, which is
+clear, but suppressing the warning for the whole realloc method does not solve
+the warning.
+Most probably it is because realloc is inlined, and the compiler makes 'orig'
+an alias to the passed pointer, and as it is inlined, it sees that it can be
+used in the caller function. That's why we suppres the warning in the caller
+here.
+There is a solution for the warning, but it involves erasing original pointer
+from the list, then reallocating and then reinserting the pointer. As realloc
+is a busy function, such an approach seems to be not optimal.
+*/
+IGNORE_WARNING_USE_AFTER_FREE_START
 START_TEST(test1)
 {
     ssize_t const bh_size (sizeof(gcache::BufferHeader));
@@ -77,6 +93,7 @@ START_TEST(test1)
     ck_assert(!ms._allocd());
 }
 END_TEST
+IGNORE_WARNING_USE_AFTER_FREE_END
 
 Suite* gcache_mem_suite()
 {
