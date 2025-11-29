@@ -56,15 +56,12 @@ MemStore::have_free_space (size_type size)
 void
 MemStore::seqno_reset()
 {
-    for (std::set<void*>::iterator buf(allocd_.begin()); buf != allocd_.end();)
+    for (std::set<BufferHeader*>::iterator buf(allocd_.begin());
+         buf != allocd_.end();)
     {
-        std::set<void*>::iterator tmp(buf); ++buf;
+        std::set<BufferHeader*>::iterator tmp(buf); ++buf;
 
-#ifdef PXC
-        BufferHeader* const bh(BH_cast(*tmp));
-#else
-        BufferHeader* const bh(ptr2BH(*tmp));
-#endif /* PXC */
+        BufferHeader* const bh(*tmp);
 
         if (bh->seqno_g != SEQNO_NONE)
         {
