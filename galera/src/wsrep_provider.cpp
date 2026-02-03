@@ -1563,6 +1563,26 @@ wsrep_status_t galera_desync (wsrep_t* gh)
     }
 }
 
+#ifdef PXC
+extern "C"
+wsrep_seqno_t galera_try_desync_and_pause (wsrep_t* gh)
+{
+    assert(gh != 0);
+    assert(gh->ctx != 0);
+
+    REPL_CLASS * repl(reinterpret_cast< REPL_CLASS * >(gh->ctx));
+
+    try
+    {
+        return repl->try_desync_and_pause();
+    }
+    catch (gu::Exception& e)
+    {
+        log_warn << "Node try_desync_and_pause failed: " << e.what();
+        return WSREP_SEQNO_UNDEFINED;
+    }
+}
+#endif /* PXC */
 
 extern "C"
 wsrep_status_t galera_resync (wsrep_t* gh)
@@ -1659,6 +1679,9 @@ static wsrep_t galera_str = {
     &galera_rotate_gcache_key,
 #endif /* PXC */
     &galera_pause,
+#ifdef PXC
+    &galera_try_desync_and_pause,
+#endif /* PXC */
     &galera_resume,
     &galera_desync,
     &galera_resync,
