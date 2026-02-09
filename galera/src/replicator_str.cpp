@@ -7,6 +7,7 @@
 #include "gcs_error.hpp"
 
 #include <gu_abort.h>
+#include <gu_debug_sync.hpp>
 #include <gu_throw.hpp>
 
 /*
@@ -108,6 +109,15 @@ ReplicatorSMM::sst_received(const wsrep_gtid_t& state_id,
 
     sst_uuid_  = state_id.uuid;
     sst_seqno_ = rcode ? WSREP_SEQNO_UNDEFINED : state_id.seqno;
+
+    GU_DBUG_SYNC_EXECUTE("sst_received_decrease_state_seqno", {
+        /* Pretend that received SST is shorter.
+        IST will follow, and it will form 5 seqnos gap that should be
+        detected by Joiner */
+        sst_seqno_ = (sst_seqno_ ==  WSREP_SEQNO_UNDEFINED ?
+                      sst_seqno_ : sst_seqno_ - 5);
+    });
+
     assert(false == sst_received_);
     sst_received_ = true;
     sst_cond_.signal();
@@ -526,6 +536,12 @@ void ReplicatorSMM::process_state_req(void*       recv_ctx,
                     ((str_proto_ver < 3 || cc_lowest_trx_seqno_ == 0) ?
                     istr.last_applied() + 1 :
                     std::min(cc_lowest_trx_seqno_, istr.last_applied()+1));
+
+                GU_DBUG_SYNC_EXECUTE("serve_mimimal_ist", {
+                    wsrep_seqno_t &first_noconst =
+                        const_cast<wsrep_seqno_t&>(first);
+                    first_noconst = istr.last_applied() + 1;
+                })
 
                 try
                 {
@@ -1611,13 +1627,17 @@ void ReplicatorSMM::recv_IST(void* recv_ctx)
     {
         std::ostringstream os;
 
-        /* If IST queue was EOF that suggest IST is not going to happen
-        and DONOR (operating with old g-3 protocol) will directly send SST. */
-        if (ist_event_queue_.is_eof() && trx_proto_ver() < 3) {
-            log_info << "IST loop interrupted. Likely cause: DONOR is running"
-                     << " galera-3 or earlier protocol and has decided to"
-                     << " skip IST in favor of complete SST";
-            return;
+        if (ist_event_queue_.is_eof()) {
+            if (ist_receiver_.error_code() == EINVAL) {
+                log_info << "IST loop interrupted.";
+            } else if (trx_proto_ver() < 3) {
+                /* If IST queue was EOF that suggest IST is not going to happen
+                and DONOR (operating with old g-3 protocol) will directly send SST. */
+                log_info << "IST loop interrupted. Likely cause: DONOR is running"
+                        << " galera-3 or earlier protocol and has decided to"
+                        << " skip IST in favor of complete SST";
+                return;
+            }
         }
 
         os << "Receiving IST failed, node restart required: " << e.what();
@@ -1638,9 +1658,7 @@ void ReplicatorSMM::recv_IST(void* recv_ctx)
         }
 
         log_fatal << os.str();
-
-        gu::Lock lock(closing_mutex_);
-        start_closing();
+        abort();
     }
 }
 

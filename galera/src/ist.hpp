@@ -85,6 +85,7 @@ namespace galera
             wsrep_seqno_t current_seqno()   { return current_seqno_; }
             wsrep_seqno_t last_seqno()      { return last_seqno_; }
             bool          running()         { return running_; }
+            int           error_code()      { return error_code_; }
 #endif /* PXC */
 
         private:
