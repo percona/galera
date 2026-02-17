@@ -557,6 +557,13 @@ void galera::ist::Receiver::run()
                 assert(!progress);
                 if (act.seqno_g > first_seqno_)
                 {
+                    /* MTR test needs to execute some workload on the Donor node while waiting here.
+                    Unfortunately the server is not ready for connections yet, so we can't use GU_DBUG_SYNC_WAIT()
+                    to do the job and then unblock the joiner. */
+                    GU_DBUG_SYNC_EXECUTE("ist_receiver_wait_afterreceived_wrong_starting_seqno", {
+                        sleep(15);
+                    });
+
                     error_os << "IST started with wrong seqno: " << act.seqno_g
                              << ", expected <= " << first_seqno_;
                     ec = EINVAL;
