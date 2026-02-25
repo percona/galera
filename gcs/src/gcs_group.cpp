@@ -22,6 +22,7 @@
 #include <string>
 #endif /* PXC */
 
+#include <algorithm>
 #include <cinttypes>
 #include <limits>
 #include <regex>
@@ -1075,6 +1076,17 @@ group_recount_votes (gcs_group_t& group)
     return true;
 }
 
+/* Error codes that must not affect voting
+   (e.g. 1681 has been deprecated without replacement)
+   (also 1681 warning can differ across nodes). */
+static bool ignore_error_code_for_voting(const std::string& code)
+{
+    /* Keep below list sorted. */
+    static const std::vector<std::string> ignore_error_codes= {"1681"};
+    return std::binary_search(ignore_error_codes.begin(),
+                    ignore_error_codes.end(), code);
+}
+
 /* Function to recompute vote based on only on the error code */
 int64_t recompute_vote_based_on_error_code (const gu::GTID& gtid,
                                             const std::string& err_msg,
@@ -1098,7 +1110,11 @@ int64_t recompute_vote_based_on_error_code (const gu::GTID& gtid,
     {
         // Extract the error code
         std::smatch match = *it;
-        matchedErrorCodes.push_back(match[1].str());
+        std::string code(match[1].str());
+
+        // skip error codes that must not affect voting
+        if (!ignore_error_code_for_voting(code))
+          matchedErrorCodes.push_back(std::move(code));
         ++it;
     }
 
