@@ -182,6 +182,9 @@ namespace galera
         const gu::Config& params() const { return config_; }
 
         wsrep_seqno_t pause();
+#ifdef PXC
+        wsrep_seqno_t try_desync_and_pause();
+#endif /* PXC */
         void          resume();
 
         void          desync();

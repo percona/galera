@@ -3403,6 +3403,102 @@ wsrep_seqno_t galera::ReplicatorSMM::pause()
     return ret;
 }
 
+#ifdef PXC
+wsrep_seqno_t galera::ReplicatorSMM::try_desync_and_pause() {
+    wsrep_seqno_t const local_seqno(
+        static_cast<wsrep_seqno_t>(gcs_.local_sequence()));
+
+    LocalOrder lo(local_seqno);
+
+    // If local monitor window would block, don't attempt to pause now.
+    if (local_monitor_.would_block(local_seqno))
+    {
+        return WSREP_SEQNO_UNDEFINED;
+    }
+
+    local_monitor_.enter(lo);
+
+    wsrep_seqno_t seqno_l;
+
+    if (local_seqno <= 0)
+    {
+        log_warn << "Invalid local_seqno : " << local_seqno;
+        local_monitor_.leave(lo);
+        return WSREP_SEQNO_UNDEFINED;
+    }
+
+    // Get drain seqno from cert index
+    wsrep_seqno_t const upto(cert_.position());
+
+    if (apply_monitor_.last_left() < upto)
+    {
+        log_warn << "Apply monitor not drained (last_left : "
+                 << apply_monitor_.last_left()
+                 << " is less then cert position : " << upto << ")";
+        local_monitor_.leave(lo);
+        return WSREP_SEQNO_UNDEFINED;
+    }
+    if (co_mode_ != CommitOrder::BYPASS &&
+        commit_monitor_.last_left() < upto)
+    {
+        log_warn << "Commit monitor not drained (last_left : "
+                 << commit_monitor_.last_left()
+                 << " is less then cert position : " << upto  << ")";
+        local_monitor_.leave(lo);
+        return WSREP_SEQNO_UNDEFINED;
+    }
+
+    ssize_t desync_ret = gcs_.desync(seqno_l);
+
+    assert(seqno_l == local_seqno+1);
+    // Failure will be handled later using desync return status.
+    // This message is to help debugging if such situation occurs.
+    if (seqno_l != local_seqno+1) {
+        log_warn << "GCS desync returned seqno " << seqno_l << ", expected "
+                 << (local_seqno + 1);
+    }
+
+    // this part is ugly, but we need to move to the next seqno returned by desync
+    local_monitor_.leave(lo);
+    LocalOrder lo2(seqno_l);
+    local_monitor_.enter(lo2);
+
+    if (desync_ret == 0)
+    {
+        if (state_() != S_DONOR) state_.shift_to(S_DONOR);
+        GU_DBUG_SYNC_WAIT("wsrep_desync_left_local_monitor");
+    }
+    else
+    {
+        log_warn << "GCS desync failed: " << -desync_ret << " ("
+                 << gcs_error_str(-desync_ret) << ")";
+        local_monitor_.leave(lo2);
+        return WSREP_SEQNO_UNDEFINED;
+    }
+    // end of desync
+    // start of pause
+    // everything without releasing local monitor
+    pause_seqno_ = seqno_l;
+
+    drain_monitors(upto);
+
+    assert (apply_monitor_.last_left() >= upto);
+    if (co_mode_ != CommitOrder::BYPASS)
+    {
+        assert (commit_monitor_.last_left() >= upto);
+        assert (commit_monitor_.last_left() == apply_monitor_.last_left());
+    }
+
+    wsrep_seqno_t const ret(last_committed());
+    st_.set(state_uuid_, ret, safe_to_bootstrap_);
+
+    log_info << "Provider paused at " << state_uuid_ << ':' << ret
+             << " (" << pause_seqno_ << ")";
+
+    return ret;
+}
+#endif /* PXC */
+
 void galera::ReplicatorSMM::resume()
 {
     if (pause_seqno_ == WSREP_SEQNO_UNDEFINED)
