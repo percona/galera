@@ -173,6 +173,7 @@ static_ssl = ARGUMENTS.get('static_ssl', None)
 install = ARGUMENTS.get('install', None)
 version_script = int(ARGUMENTS.get('version_script', 1))
 
+<<<<<<< HEAD
 # parse psi flag option
 psi        = int(ARGUMENTS.get('psi', 0))
 if psi:
@@ -188,6 +189,11 @@ if psi:
 opt_flags = opt_flags + ' -DPXC'
 
 GALERA_VER = ARGUMENTS.get('version', '4.24')
+||||||| c71ef30a
+GALERA_VER = ARGUMENTS.get('version', '4.24')
+=======
+GALERA_VER = ARGUMENTS.get('version', '4.25')
+>>>>>>> release_26.4.25
 GALERA_REV = ARGUMENTS.get('revno', 'XXXX')
 
 # Attempt to read from file if not given
