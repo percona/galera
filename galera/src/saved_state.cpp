@@ -154,7 +154,6 @@ SavedState::SavedState  (const std::string& file) :
         current_len_ = 0;
         set (uuid_, seqno_, safe_to_bootstrap_);
     }
-<<<<<<< HEAD
 
 #ifdef PXC
     /* freopen will not retain the lock taken on the original fd.
@@ -168,8 +167,6 @@ SavedState::SavedState  (const std::string& file) :
         return;
     }
 #endif /* PXC */
-||||||| c71ef30a
-=======
 
     if (first_time_) {
         first_time_ = false;
@@ -177,7 +174,6 @@ SavedState::SavedState  (const std::string& file) :
         saved_seqno_ = seqno_;
         saved_safe_to_bootstrap_ = safe_to_bootstrap_;
     }
->>>>>>> release_26.4.25
 }
 
 SavedState::~SavedState ()

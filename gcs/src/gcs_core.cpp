@@ -405,16 +405,8 @@ gcs_core_send (gcs_core_t*          const conn,
             act_size < frg.frag_len ? act_size : frg.frag_len;
 
         /* Here is the only time we have to cast frg.frag */
-<<<<<<< HEAD
         char* dst = static_cast<char*>(const_cast<void*>(frg.frag));
-        size_t to_copy = chunk_size;
-||||||| c71ef30a
-        char* dst = (char*)frg.frag;
-        size_t to_copy = chunk_size;
-=======
-        char* dst = (char*)frg.frag;
         ssize_t to_copy = chunk_size;
->>>>>>> release_26.4.25
 
         while (to_copy > 0) {        // gather action bufs into one
             if (to_copy <= left) {

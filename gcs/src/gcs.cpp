@@ -2027,19 +2027,7 @@ gcs_conn::~gcs_conn()
             if (GCS_CONN_CLOSED > conn->state)
                 gu_error ("Attempt to call gcs_destroy() before gcs_close(): "
                           "state = %d", conn->state);
-<<<<<<< HEAD
             err = EBADFD;
-||||||| c71ef30a
-
-            gu_cond_destroy (&tmp_cond);
-
-            gu_throw_error(EBADFD);
-=======
-
-            gu_cond_destroy (&tmp_cond);
-
-            gu_abort();
->>>>>>> release_26.4.25
         }
 
         gcs_sm_leave (conn->sm);
@@ -2058,22 +2046,11 @@ gcs_conn::~gcs_conn()
     gu_cond_destroy (&tmp_cond);
     gcs_sm_destroy (conn->sm);
 
-<<<<<<< HEAD
     if ((err = gcs_fifo_lite_destroy (conn->repl_q)))
     {
         gu_debug ("Error destroying repl FIFO: %d (%s)", err, strerror(-err));
-||||||| c71ef30a
-    if ((err = gcs_fifo_lite_destroy (conn->repl_q))) {
-        gu_debug ("Error destroying repl FIFO: %d (%s)", err, strerror(-err));
-        gu_throw_error(-err);
-=======
-    if ((err = gcs_fifo_lite_destroy (conn->repl_q))) {
-        gu_error ("Error destroying repl FIFO: %d (%s)", err, strerror(-err));
-        gu_abort();
->>>>>>> release_26.4.25
     }
 
-<<<<<<< HEAD
     if ((err = gcs_core_close(conn->core)))
     {
         gu_debug ("Failed to close GCS: error: %d (%s)",-err, strerror(-err));
@@ -2085,15 +2062,6 @@ gcs_conn::~gcs_conn()
     if ((err = gcs_core_destroy (conn->core)))
     {
         gu_debug ("Error destroying core: %d (%s)", err, strerror(-err));
-||||||| c71ef30a
-    if ((err = gcs_core_destroy (conn->core))) {
-        gu_debug ("Error destroying core: %d (%s)", err, strerror(-err));
-        gu_throw_error(-err);
-=======
-    if ((err = gcs_core_destroy (conn->core))) {
-        gu_error ("Error destroying core: %d (%s)", err, strerror(-err));
-        gu_abort();
->>>>>>> release_26.4.25
     }
     /* This must not last for long */
     while (gu_mutex_destroy (&conn->fc_lock));
