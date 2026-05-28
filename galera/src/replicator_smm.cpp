@@ -360,7 +360,7 @@ void galera::ReplicatorSMM::wait_for_CLOSED(gu::Lock& lock)
     assert(WSREP_UUID_UNDEFINED == uuid_);
 }
 
-galera::ReplicatorSMM::~ReplicatorSMM()
+galera::ReplicatorSMM::~ReplicatorSMM() noexcept(false)
 {
     log_info << "dtor state: " << state_();
 

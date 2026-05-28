@@ -207,7 +207,7 @@ static inline long gcs_send (gcs_conn_t*    const conn,
                              gcs_act_type_t const act_type,
                              bool           const scheduled)
 {
-    struct gu_buf const buf[1] = { act, static_cast<ssize_t>(act_size) };
+    struct gu_buf const buf[1] = { { act, static_cast<ssize_t>(act_size) } };
     return gcs_sendv (conn, &(buf[0]), act_size, act_type, scheduled, false);
 }
 
@@ -249,7 +249,7 @@ static inline long gcs_repl (gcs_conn_t*        const conn,
                              struct gcs_action* const action,
                              bool               const scheduled)
 {
-    struct gu_buf const buf[1] = { action->buf, action->size };
+    struct gu_buf const buf[1] = { { action->buf, action->size } };
     return gcs_replv (conn, &(buf[0]), action, scheduled, nullptr);
 }
 
