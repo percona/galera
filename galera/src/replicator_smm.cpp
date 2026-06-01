@@ -142,6 +142,7 @@ galera::ReplicatorSMM::ReplicatorSMM(const struct wsrep_init_args* args)
 #endif /* HAVE_PSI_INTERFACE */
     sst_retry_sec_      (1),
     sst_received_       (false),
+    sst_graceful_shutdown_ (false),
     gcache_progress_cb_ (ProgressCallback<int64_t>(WSREP_MEMBER_UNDEFINED,
                                                    WSREP_MEMBER_UNDEFINED)),
     master_key_provider_([this](const std::string& keyId){ return get_encryption_key(keyId); },
@@ -359,7 +360,7 @@ void galera::ReplicatorSMM::wait_for_CLOSED(gu::Lock& lock)
     assert(WSREP_UUID_UNDEFINED == uuid_);
 }
 
-galera::ReplicatorSMM::~ReplicatorSMM()
+galera::ReplicatorSMM::~ReplicatorSMM() noexcept(false)
 {
     log_info << "dtor state: " << state_();
 

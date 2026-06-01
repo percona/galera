@@ -6,6 +6,7 @@
 #include "galera_info.hpp"
 #include "gcs_error.hpp"
 
+#include <cerrno>
 #include <gu_abort.h>
 #include <gu_debug_sync.hpp>
 #include <gu_throw.hpp>
@@ -104,6 +105,14 @@ ReplicatorSMM::sst_received(const wsrep_gtid_t& state_id,
     }
 #endif /* !!!!PXC */
 
+    if (rcode == -ECANCELED) {
+        // perform a graceful shutdown
+        sst_graceful_shutdown_ = true;
+        sst_received_ = true;
+        sst_cond_.signal();
+        return WSREP_OK;
+    }
+
     assert(rcode <= 0);
     if (rcode) { assert(state_id.seqno == WSREP_SEQNO_UNDEFINED); }
 
@@ -123,19 +132,41 @@ ReplicatorSMM::sst_received(const wsrep_gtid_t& state_id,
     sst_cond_.signal();
 
 #ifdef PXC
-    /* SST script may exit with EAGAIN code. This is the hint that data
-     directory was not deleted and it is up to caller to decide what to do.
-     (eg. SST script pre-check failed because of some external binary missing
-     or because sst-info file was not received because of network failure)
-     Here, as the caller, we decide to mark back Galera state as safe to avoid
-     forced SST next time, but try with IST */
+    /* EAGAIN/EPIPE are handled here, synchronously from the joiner thread,
+       and intentionally do NOT use the sst_graceful_shutdown_ deferred-abort
+       path that -ECANCELED above takes:
+
+         -ECANCELED is raised by PXC's own wsrep_sst_cancel(true) during an
+         orchestrated shutdown. By construction the apply thread is already
+         parked in request_state_transfer()'s sst_lock.wait(sst_cond_), so
+         signalling sst_graceful_shutdown_ + sst_cond_ is enough - the apply
+         thread wakes up and performs restore_saved_state() + abort() itself.
+
+         -EAGAIN and -EPIPE, on the other hand, can arrive at any time. They
+         originate in the SST script (timeout / pre-check failure / network
+         failure) and are delivered to us by the joiner thread. The apply
+         thread that issued the state-transfer request may not have reached
+         sst_lock.wait() yet - in particular, it may still be spinning in
+         send_state_request()'s retry loop because the donor disappeared and
+         the cluster is now NON_PRIMARY. Setting the flag there would simply
+         be ignored, so we abort right here.
+
+       For EAGAIN we additionally restore the on-disk state to what was in
+       grastate.dat at startup (the SST script exited before wiping the data
+       directory, so this Galera run did not actually modify anything; the
+       next restart can therefore try IST instead of another forced SST).
+       We use restore_saved_state() rather than mark_safe() to match the
+       -ECANCELED branch above (MDEV-31517) and because it is independent of
+       any in-memory SavedState bookkeeping - it always writes the values
+       captured at construction time, regardless of the current unsafe_
+       counter or whether the in-memory uuid_/seqno_ happen to still match. */
     switch (rcode) {
         case -EAGAIN:
             log_fatal << "SST finished with code: " << -rcode << ". "
                     << "It means that SST failed before wiping out the data "
                     << "directory. Saving node state to retry with IST instead "
                     << "of full SST after restart.";
-            st_.mark_safe();
+            st_.restore_saved_state();
             [[fallthrough]];
         case -EPIPE:
             log_fatal << "State transfer request failed unrecoverably: "
@@ -1244,6 +1275,19 @@ ReplicatorSMM::request_state_transfer (void* recv_ctx,
                 sst_seqno_ = cc_seqno;
             }
 #endif
+        }
+
+        if (sst_graceful_shutdown_) {
+            log_warn  << "State transfer interrupted, shutting down gracefully:"
+                      << "\n\t sst_uuid = " << sst_uuid_
+                      << "\n\t sst_seqno = " << sst_seqno_
+                      << "\n\t group_uuid = " << group_uuid
+                      << "\n\t safe_to_bootstrap_ = " << safe_to_bootstrap_
+                      << "\n\t cc_seqno = " << cc_seqno;
+
+            st_.restore_saved_state();
+
+            abort();
         }
 
 #ifdef PXC

@@ -40,7 +40,7 @@ namespace gcache
                     size_t             encrypt_cache_size = 0,
                     gu::MasterKeyProvider* master_key_provider = nullptr);
 
-        ~RingBuffer ();
+        ~RingBuffer () noexcept(false);
 
         void* malloc  (size_type size);
 

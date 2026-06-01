@@ -168,7 +168,7 @@ namespace gcache
         BH_clear (BH_cast(next_));
     }
 
-    RingBuffer::~RingBuffer ()
+    RingBuffer::~RingBuffer () noexcept(false)
     {
         if (encrypt_) {
             master_key_provider_->register_key_rotation_request_observer([](){ return true; });

@@ -49,7 +49,7 @@ namespace gcache
                 const std::string& data_dir,
                 gu::MasterKeyProvider* mk_provider = nullptr);
 
-        virtual ~GCache();
+        virtual ~GCache() noexcept(false);
 
         /*! prints object properties */
         void  print (std::ostream& os);

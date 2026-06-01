@@ -93,7 +93,7 @@ namespace gcache
 #endif
     {}
 
-    GCache::~GCache ()
+    GCache::~GCache () noexcept(false)
     {
         gu::Lock lock(mtx);
         log_debug << "\n" << "GCache mallocs : " << mallocs
