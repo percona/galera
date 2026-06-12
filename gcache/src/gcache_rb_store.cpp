@@ -18,7 +18,9 @@
 #include <gu_crc.hpp>
 
 #include <cassert>
-#include <iostream> // std::cerr
+#include <iostream>  // std::cerr
+#include <sstream>   // std::ostringstream
+#include <stdexcept> // std::runtime_error
 
 namespace gcache
 {
@@ -1026,7 +1028,9 @@ namespace gcache
 
                 try
                 {
-                    recover(offset - (start_ - preamble), version);
+                    recover(offset - (start_ - preamble), version,
+                            static_cast<seqno_t>(seqno_min),
+                            static_cast<seqno_t>(seqno_max));
                 }
                 catch (gu::Exception& e)
                 {
@@ -1070,8 +1074,66 @@ namespace gcache
         ProgressCallback* pcb_;
     };
 
+    void
+    RingBuffer::do_sanity_checks(BufferHeader* bh,
+                                 seqno_t const seqno_g,
+                                 seqno_t const preamble_seqno_min,
+                                 seqno_t const preamble_seqno_max) const
+    {
+        /* Sanity check on bh->size. A corrupted gcache may
+         * have a buffer header which advertises size
+         * payload larger than the entire cache.
+         * GCACHE_SCAN_BUFFER_TEST guarantees that bh->size fits within the
+         * buffer (ptr + bh->size <= segment_end), so bh->size > size_cache_
+         * cannot happen when do_sanity_check() is called after that macro.
+         * The condition is kept as a defensive check for future use, in case
+         * do_sanity_check() is called without a preceding
+         * GCACHE_SCAN_BUFFER_TEST.*/
+        if (bh->size > size_cache_)
+        {
+            std::ostringstream os;
+            os << "implausible bh->size " << bh->size
+               << " exceeds cache size " << size_cache_
+               << ", cache appears to be corrupt";
+            throw std::runtime_error(os.str());
+        }
+        /* Sanity check on bh->seqno_g: a corrupted gcache.cache may contain
+         * buffer headers with corrupted seqno_g values. */
+        seqno_t const max_seqnos(
+            static_cast<seqno_t>(size_cache_ / sizeof(BufferHeader)) + 1);
+        if (preamble_seqno_min != SEQNO_ILL &&
+            preamble_seqno_max != SEQNO_ILL &&
+            (seqno_g > preamble_seqno_max + max_seqnos ||
+             seqno_g < preamble_seqno_min - max_seqnos))
+        {
+            std::ostringstream os;
+            os << "implausible seqno " << seqno_g
+               << " is outside preamble range ["
+               << preamble_seqno_min << ", " << preamble_seqno_max
+               << "] (epsilon " << max_seqnos
+               << "), cache appears to be corrupt";
+            throw std::runtime_error(os.str());
+        }
+
+        if (!seqno2ptr_.empty() &&
+            (seqno_g > seqno2ptr_.index_back() + max_seqnos ||
+             seqno_g < seqno2ptr_.index_front() - max_seqnos))
+        {
+            std::ostringstream os;
+            os << "implausible seqno " << seqno_g
+               << " for cache range ["
+               << seqno2ptr_.index_front() << ", "
+               << seqno2ptr_.index_back()
+               << "] (max gap " << max_seqnos
+               << "), cache appears to be corrupt";
+            throw std::runtime_error(os.str());
+        }
+    }
+
     seqno_t
-    RingBuffer::scan(off_t const offset, int const scan_step)
+    RingBuffer::scan(off_t const offset, int const scan_step,
+                     seqno_t const preamble_seqno_min,
+                     seqno_t const preamble_seqno_max)
     {
         int segment_scans(0);
         seqno_t seqno_max(SEQNO_ILL);
@@ -1205,6 +1267,11 @@ namespace gcache
                     {
                         try
                         {
+                            /* Reject corrupted seqno_g values before inserting
+                             * into seqno2ptr_. */
+                            do_sanity_checks(bh, seqno_g, preamble_seqno_min,
+                                             preamble_seqno_max);
+
                             seqno2ptr_.insert(seqno_g, bh + 1);
                         }
                         catch (std::exception& e)
@@ -1356,12 +1423,18 @@ namespace gcache
     }
 
     void
-    RingBuffer::recover(off_t const offset, int version)
+    RingBuffer::recover(off_t const offset, int version,
+                        seqno_t const preamble_seqno_min,
+                        seqno_t const preamble_seqno_max)
     {
         static const char* const diag_prefix ="Recovering GCache ring buffer: ";
 
         /* scan the buffer and populate seqno2ptr map */
-        seqno_t const lowest(scan(offset, version > 0 ? MemOps::ALIGNMENT : 1)
+        /* pr_seqno_min and pr_seqno_max are forwarded so scan() can reject
+         * buffer headers whose seqno_g is outside the range. */
+
+        seqno_t const lowest(scan(offset, version > 0 ? MemOps::ALIGNMENT : 1,
+                                  preamble_seqno_min, preamble_seqno_max)
                              + 1);
         /* lowest is the lowest valid seqno based on collisions during scan */
 
