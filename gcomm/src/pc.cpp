@@ -173,14 +173,8 @@ void gcomm::PC::connect(bool start_prim)
             pstack_.pop_proto(pc_);
             pstack_.pop_proto(evs_);
             pstack_.pop_proto(gmcast_);
-<<<<<<< HEAD
-            gu_throw_error(ETIMEDOUT) << "failed to reach primary view (" << throw_message << ")";
-||||||| 5d07ad0a
-            gu_throw_error(ETIMEDOUT) << "failed to reach primary view";
-=======
             closed_ = true;
-            gu_throw_error(ETIMEDOUT) << "failed to reach primary view";
->>>>>>> release_26.4.27
+            gu_throw_error(ETIMEDOUT) << "failed to reach primary view (" << throw_message << ")";
         }
     }
 

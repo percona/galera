@@ -1949,16 +1949,8 @@ void ReplicatorSMM::ist_cc(const gcs_action& act, bool must_apply,
                so if we reset nbo waiters, we may not get notifications from
                some nodes. The only way is to learn the history through IST */
             cert_.adjust_position(*view_info, gu::GTID(conf.uuid, conf.seqno),
-<<<<<<< HEAD
                                   trx_params_.version_, false);
-            // record CC related state seqnos, needed for IST on DONOR
-||||||| 5d07ad0a
-                                  trx_params_.version_);
-            // record CC related state seqnos, needed for IST on DONOR
-=======
-                                  trx_params_.version_);
             // record CC related state seqnos needed for IST on DONOR
->>>>>>> release_26.4.27
             record_cc_seqnos(conf.seqno, "preload");
             ::free(view_info);
         }

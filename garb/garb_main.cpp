@@ -199,17 +199,11 @@ int
 main (int argc, char* argv[])
 {
     Config config(argc, argv);
-<<<<<<< HEAD
 #if defined(WITH_COREDUMPER) && WITH_COREDUMPER
     if (!config.coredumper().empty()) {
       set_coredumper_signals(config.coredumper());
     }
 #endif
-    if (config.exit()) return 0;
-||||||| 5d07ad0a
-    if (config.exit()) return 0;
-=======
->>>>>>> release_26.4.27
 
     log_info << "Read config: " <<  config << std::endl;
 

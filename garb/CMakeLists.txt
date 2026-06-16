@@ -36,36 +36,14 @@ target_compile_options(garbd
 target_link_libraries(garbd gcs4garb gcomm gcache
   ${Boost_PROGRAM_OPTIONS_LIBRARY})
 
-<<<<<<< HEAD
-set_target_properties( garbd PROPERTIES RUNTIME_OUTPUT_DIRECTORY
-  ${CMAKE_CURRENT_BINARY_DIR}/../bin/ )
-
-install(TARGETS garbd DESTINATION bin)
-if (NOT ${CMAKE_SYSTEM_NAME} MATCHES ".*BSD")
-  install(FILES
-    ${CMAKE_CURRENT_SOURCE_DIR}/files/garb.cnf
-    ${CMAKE_CURRENT_SOURCE_DIR}/files/garb.service
-    ${CMAKE_CURRENT_SOURCE_DIR}/files/garb-systemd
-    DESTINATION share)
-  install(FILES
-    ${PROJECT_SOURCE_DIR}/man/garbd.8
-    DESTINATION man/man8)
-||||||| 5d07ad0a
-install(TARGETS garbd DESTINATION bin)
-if (NOT ${CMAKE_SYSTEM_NAME} MATCHES ".*BSD")
-  install(FILES
-    ${CMAKE_CURRENT_SOURCE_DIR}/files/garb.cnf
-    ${CMAKE_CURRENT_SOURCE_DIR}/files/garb.service
-    ${CMAKE_CURRENT_SOURCE_DIR}/files/garb-systemd
-    DESTINATION share)
-  install(FILES
-    ${PROJECT_SOURCE_DIR}/man/garbd.8
-    DESTINATION man/man8)
-=======
 # Make the install destination for garbd binary configurable
 if(NOT DEFINED INSTALL_GARBD)
   set(INSTALL_GARBD "bin" CACHE STRING "path to install garbd binary to")
 endif()
+
+# Optionally set runtime output directory for garbd
+set_target_properties( garbd PROPERTIES RUNTIME_OUTPUT_DIRECTORY
+  ${CMAKE_CURRENT_BINARY_DIR}/../${INSTALL_GARBD}/ )
 
 install(TARGETS garbd DESTINATION ${INSTALL_GARBD})
 
@@ -95,7 +73,6 @@ if (NOT ${CMAKE_SYSTEM_NAME} MATCHES ".*BSD")
     ${CMAKE_CURRENT_SOURCE_DIR}/files/garb-systemd DESTINATION ${INSTALL_GARBD_SYSTEMD})
   install(FILES
     ${PROJECT_SOURCE_DIR}/man/garbd.8 DESTINATION ${INSTALL_MANPAGE})
->>>>>>> release_26.4.27
 endif()
 
 if(WITH_COREDUMPER)

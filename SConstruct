@@ -151,21 +151,7 @@ elif x86:
           compile_arch = ' -m64'
           if sysname == 'linux':
             link_arch = ' -Wl,-melf_x86_64'
-<<<<<<< HEAD
-        link_arch = compile_arch + link_arch
-elif machine == 's390x':
-    compile_arch = ' -mzarch'
-    if bits == 32:
-        compile_arch += ' -m32'
-||||||| 5d07ad0a
     link_arch = compile_arch + link_arch
-elif machine == 's390x':
-    compile_arch = ' -mzarch'
-    if bits == 32:
-        compile_arch += ' -m32'
-=======
-    link_arch = compile_arch + link_arch
->>>>>>> release_26.4.27
 
 boost      = int(ARGUMENTS.get('boost', 1))
 boost_pool = int(ARGUMENTS.get('boost_pool', 0))
@@ -182,7 +168,6 @@ static_ssl = ARGUMENTS.get('static_ssl', None)
 install = ARGUMENTS.get('install', None)
 version_script = int(ARGUMENTS.get('version_script', 1))
 
-<<<<<<< HEAD
 # parse psi flag option
 psi        = int(ARGUMENTS.get('psi', 0))
 if psi:
@@ -197,12 +182,7 @@ if psi:
 
 opt_flags = opt_flags + ' -DPXC'
 
-GALERA_VER = ARGUMENTS.get('version', '4.25')
-||||||| 5d07ad0a
-GALERA_VER = ARGUMENTS.get('version', '4.25')
-=======
 GALERA_VER = ARGUMENTS.get('version', '4.27')
->>>>>>> release_26.4.27
 GALERA_REV = ARGUMENTS.get('revno', 'XXXX')
 
 # Attempt to read from file if not given
