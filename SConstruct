@@ -1,6 +1,6 @@
 ###################################################################
 #
-# Copyright (C) 2010-2020 Codership Oy <info@codership.com>
+# Copyright (C) 2010-2026 Codership Oy <info@codership.com>
 #
 # SCons build script to build galera libraries
 #
@@ -51,11 +51,6 @@ bits = ARGUMENTS.get('bits', platform.architecture()[0])
 print('Host: ' + sysname + ' ' + machine + ' ' + bits)
 
 x86 = any(arch in machine for arch in [ 'x86', 'amd64', 'i686', 'i386', 'i86pc' ])
-
-if bits == '32bit':
-    bits = 32
-elif bits == '64bit':
-    bits = 64
 
 #
 # Print Help
@@ -131,10 +126,14 @@ if dbug:
 if gcov:
     opt_flags = opt_flags + ' --coverage -g'
 
-if sysname == 'sunos':
-    compile_arch = ' -mtune=native'
+if machine == 's390x':
+    compile_arch = ' -mzarch'
+    if bits == '32bit':
+        compile_arch += ' -m32'
+elif sysname == 'sunos':
+    compile_arch = '  -mtune=native'
 elif x86:
-    if bits == 32:
+    if bits == '32bit':
         if machine == 'x86_64':
             compile_arch = ' -mx32'
         else:
@@ -152,11 +151,21 @@ elif x86:
           compile_arch = ' -m64'
           if sysname == 'linux':
             link_arch = ' -Wl,-melf_x86_64'
+<<<<<<< HEAD
         link_arch = compile_arch + link_arch
 elif machine == 's390x':
     compile_arch = ' -mzarch'
     if bits == 32:
         compile_arch += ' -m32'
+||||||| 5d07ad0a
+    link_arch = compile_arch + link_arch
+elif machine == 's390x':
+    compile_arch = ' -mzarch'
+    if bits == 32:
+        compile_arch += ' -m32'
+=======
+    link_arch = compile_arch + link_arch
+>>>>>>> release_26.4.27
 
 boost      = int(ARGUMENTS.get('boost', 1))
 boost_pool = int(ARGUMENTS.get('boost_pool', 0))
@@ -173,6 +182,7 @@ static_ssl = ARGUMENTS.get('static_ssl', None)
 install = ARGUMENTS.get('install', None)
 version_script = int(ARGUMENTS.get('version_script', 1))
 
+<<<<<<< HEAD
 # parse psi flag option
 psi        = int(ARGUMENTS.get('psi', 0))
 if psi:
@@ -188,6 +198,11 @@ if psi:
 opt_flags = opt_flags + ' -DPXC'
 
 GALERA_VER = ARGUMENTS.get('version', '4.25')
+||||||| 5d07ad0a
+GALERA_VER = ARGUMENTS.get('version', '4.25')
+=======
+GALERA_VER = ARGUMENTS.get('version', '4.27')
+>>>>>>> release_26.4.27
 GALERA_REV = ARGUMENTS.get('revno', 'XXXX')
 
 # Attempt to read from file if not given
@@ -577,14 +592,12 @@ if boost == 1:
         boost_library_path = ''
     # Use nanosecond time precision
     conf.env.Append(CPPFLAGS = ' -DBOOST_DATE_TIME_POSIX_TIME_STD_CONFIG=1')
-
     # Common procedure to find boost static library
-    if bits == 64:
-        boost_libpaths = [ boost_library_path, '/usr/lib64', '/usr/local/lib64' ]
-    else:
-        boost_libpaths = [ boost_library_path, '/usr/local/lib', '/usr/lib' ]
-
-    def check_boost_library(libBaseName, header, configuredLibPath, autoadd = 1):
+    if bits == '32bit':
+        boost_libpaths = [ boost_library_path, '/usr/local/lib',   '/usr/lib' ]
+    elif bits == '64bit':
+        boost_libpaths = [ boost_library_path, '/usr/local/lib64', '/usr/lib64' ]
+    def check_boost_library(libBaseName, header, configuredLibPath,autoadd = 1):
         libName = libBaseName + boost_library_suffix
         if configuredLibPath != '' and not os.path.isfile(configuredLibPath):
             print("Error: file '%s' does not exist" % configuredLibPath)
@@ -611,7 +624,6 @@ if boost == 1:
                 print('Error: library %s does not exist' % libName)
                 Exit (1)
             return [libName]
-
     # Required boost headers/libraries
     #
     if boost_pool == 1:

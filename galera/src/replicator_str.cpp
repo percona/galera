@@ -294,7 +294,7 @@ StateRequest_v1::StateRequest_v1 (
                                << ") unrepresentable";
 
     if (ist_req_len > INT32_MAX || ist_req_len < 0)
-        gu_throw_error (EMSGSIZE) << "IST request length (" << sst_req_len
+        gu_throw_error (EMSGSIZE) << "IST request length (" << ist_req_len
                                << ") unrepresentable";
 
     char* ptr(req_);
@@ -1500,8 +1500,7 @@ ReplicatorSMM::request_state_transfer (void* recv_ctx,
                 // Note: apply_monitor_ must be drained to avoid race between
                 // IST appliers and GCS appliers, GCS action source may
                 // provide actions that have already been applied via IST.
-                log_info << "Draining apply monitors after IST up to "
-                         << sst_seqno_;
+                log_info << "Draining apply monitors after IST up to " << sst_seqno_;
                 apply_monitor_.drain(sst_seqno_);
                 set_initial_position(group_uuid, sst_seqno_);
             }
@@ -1950,8 +1949,16 @@ void ReplicatorSMM::ist_cc(const gcs_action& act, bool must_apply,
                so if we reset nbo waiters, we may not get notifications from
                some nodes. The only way is to learn the history through IST */
             cert_.adjust_position(*view_info, gu::GTID(conf.uuid, conf.seqno),
+<<<<<<< HEAD
                                   trx_params_.version_, false);
             // record CC related state seqnos, needed for IST on DONOR
+||||||| 5d07ad0a
+                                  trx_params_.version_);
+            // record CC related state seqnos, needed for IST on DONOR
+=======
+                                  trx_params_.version_);
+            // record CC related state seqnos needed for IST on DONOR
+>>>>>>> release_26.4.27
             record_cc_seqnos(conf.seqno, "preload");
             ::free(view_info);
         }

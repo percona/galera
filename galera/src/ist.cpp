@@ -21,10 +21,11 @@
 
 namespace
 {
-    static std::string const CONF_KEEP_KEYS     ("ist.keep_keys");
+    static std::string const CONF_KEEP_KEYS("ist.keep_keys");
     static bool        const CONF_KEEP_KEYS_DEFAULT (true);
+    static std::string const CONF_RECV_ADDR("ist.recv_addr");
+    static std::string const CONF_BIND_ADDR("ist.recv_bind");
 }
-
 
 namespace galera
 {
@@ -83,21 +84,25 @@ namespace galera
 }
 
 
-std::string const
-galera::ist::Receiver::RECV_ADDR("ist.recv_addr");
-std::string const
-galera::ist::Receiver::RECV_BIND("ist.recv_bind");
-
 void
 galera::ist::register_params(gu::Config& conf)
 {
-    conf.add(Receiver::RECV_ADDR, gu::Config::Flag::read_only);
-    conf.add(Receiver::RECV_BIND, gu::Config::Flag::read_only);
+    conf.add(CONF_RECV_ADDR, gu::Config::Flag::read_only);
+    conf.add(CONF_BIND_ADDR, gu::Config::Flag::read_only);
     // Made hidden because undocumented
     conf.add(CONF_KEEP_KEYS,
              gu::Config::Flag::hidden |
              gu::Config::Flag::read_only |
              gu::Config::Flag::type_bool);
+}
+
+static void update_base_host_key(gu::Config& conf, const std::string& addr)
+{
+    /* update galera::BASE_HOST_KEY if not set */
+    if (!conf.is_set(galera::BASE_HOST_KEY))
+    {
+        conf.set(galera::BASE_HOST_KEY, addr);
+    }
 }
 
 galera::ist::Receiver::Receiver(gu::Config&           conf,
@@ -108,7 +113,6 @@ galera::ist::Receiver::Receiver(gu::Config&           conf,
                                 gu::Progress<wsrep_seqno_t>::Callback* cb)
     :
     recv_addr_    (),
-    recv_bind_    (),
     io_service_   (conf),
     acceptor_     (),
 #ifdef PXC
@@ -142,19 +146,10 @@ galera::ist::Receiver::Receiver(gu::Config&           conf,
 #endif /* PXC */
     ready_        (false)
 {
-    std::string recv_addr;
-    std::string recv_bind;
-
-    try
-    {
-        recv_bind = conf_.get(RECV_BIND);
-        // no return
-    }
-    catch (gu::NotSet& e) {}
-
-    try /* check if receive address is explicitly set */
-    {
-        recv_addr = conf_.get(RECV_ADDR);
+    /* check if receive address is explicitly set in config */
+    try {
+        std::string const recv(conf.get(CONF_RECV_ADDR));
+        update_base_host_key(conf, recv);
         return;
     }
     catch (gu::NotSet& e) {} /* if not, check the alternative.
@@ -164,8 +159,11 @@ galera::ist::Receiver::Receiver(gu::Config&           conf,
     {
         try
         {
-            recv_addr = gu::URI(std::string("tcp://") + addr).get_host();
-            conf_.set(RECV_ADDR, recv_addr);
+            std::string const recv
+                (gu::URI(std::string("tcp://") + addr).get_host());
+            conf.set(CONF_RECV_ADDR, recv);
+            update_base_host_key(conf, recv);
+            return;
         }
         catch (gu::NotSet& e) {}
     }
@@ -253,57 +251,34 @@ static void IST_fix_addr_port(const gu::Config& conf, const gu::URI& uri,
     }
 }
 
-std::string galera::IST_determine_recv_addr (gu::Config& conf)
-{
-    std::string recv_addr;
-
+std::string galera::IST_determine_addr(gu::Config& conf,
+                                       const std::string addr_key) {
+    std::string ret(conf.get(addr_key));
+    IST_fix_addr_scheme(conf, ret);
+    gu::URI const uri(ret);
+    IST_fix_addr_port(conf, uri, ret);
+    log_info << "IST receiver addr using " << ret;
+    return ret;
+}
+void galera::check_recv_addr(gu::Config& conf) {
     try
     {
-        recv_addr = conf.get(galera::ist::Receiver::RECV_ADDR);
+        conf.get(CONF_RECV_ADDR);
     }
     catch (const gu::NotSet&)
     {
         try
         {
-            recv_addr = conf.get(galera::BASE_HOST_KEY);
+            conf.set(CONF_RECV_ADDR, conf.get(galera::BASE_HOST_KEY));
         }
         catch (const gu::NotSet&)
         {
             gu_throw_error(EINVAL)
                 << "Could not determine IST receive address: '"
-                << galera::ist::Receiver::RECV_ADDR << "' or '"
+                << CONF_RECV_ADDR << "' or '"
                 << galera::BASE_HOST_KEY << "' not set.";
         }
-    }
-
-    IST_fix_addr_scheme(conf, recv_addr);
-    gu::URI ra_uri(recv_addr);
-
-    if (!conf.has(galera::BASE_HOST_KEY))
-        conf.set(galera::BASE_HOST_KEY, ra_uri.get_host());
-
-    IST_fix_addr_port(conf, ra_uri, recv_addr);
-
-    log_info << "IST receiver addr using " << recv_addr;
-    return recv_addr;
-}
-
-std::string galera::IST_determine_recv_bind(gu::Config& conf)
-{
-    std::string recv_bind;
-
-    recv_bind = conf.get(galera::ist::Receiver::RECV_BIND);
-
-    IST_fix_addr_scheme(conf, recv_bind);
-
-    gu::URI rb_uri(recv_bind);
-
-    IST_fix_addr_port(conf, rb_uri, recv_bind);
-
-    log_info << "IST receiver bind using " << recv_bind;
-    return recv_bind;
-}
-
+    }}
 std::string
 galera::ist::Receiver::prepare(wsrep_seqno_t const first_seqno,
                                wsrep_seqno_t const last_seqno,
@@ -313,22 +288,21 @@ galera::ist::Receiver::prepare(wsrep_seqno_t const first_seqno,
     ready_ = false;
     version_ = version;
     source_id_ = source_id;
-    recv_addr_ = IST_determine_recv_addr(conf_);
-    try
-    {
-        recv_bind_ = IST_determine_recv_bind(conf_);
-    }
-    catch (gu::NotSet&)
-    {
-        recv_bind_ = recv_addr_;
-    }
+
+    check_recv_addr(conf_);
+
+    recv_addr_ = IST_determine_addr(conf_, CONF_RECV_ADDR);
+
+    std::string bind_addr;
+    try {
+        bind_addr = IST_determine_addr(conf_, CONF_BIND_ADDR);
+    } catch (gu::NotSet&) { bind_addr = recv_addr_; }
 
     // uri_bind will be the real bind address which the acceptor will
     // listen. The recv_addr_ returned from this call may point to
     // other address, for example if the node is behind NATting firewall.
-    gu::URI     const uri_bind(recv_bind_);
-    try
-    {
+    gu::URI const uri_bind(bind_addr);
+    try {
         if (uri_bind.get_scheme() == "ssl")
         {
             log_info << "IST receiver using ssl";
@@ -340,14 +314,14 @@ galera::ist::Receiver::prepare(wsrep_seqno_t const first_seqno,
             // Removed in 4.x asio refactoring.
             // gu::ssl_prepare_context(conf_, ssl_ctx_, version >= 7);
         }
-
         acceptor_ = io_service_.make_acceptor(uri_bind);
         acceptor_->listen(uri_bind);
-        // read recv_addr_ from acceptor_ in case zero port was specified
-        gu::URI const uri_addr(recv_addr_);
-        recv_addr_ = uri_addr.get_scheme()
+
+        // force recv_addr_ port from acceptor_
+        gu::URI const uri_recv(recv_addr_);
+        recv_addr_ = uri_recv.get_scheme()
             + "://"
-            + uri_addr.get_host()
+            + uri_recv.get_host()
             + ":"
             + gu::to_string(acceptor_->listen_port());
     }
@@ -355,8 +329,7 @@ galera::ist::Receiver::prepare(wsrep_seqno_t const first_seqno,
     {
         recv_addr_ = "";
         gu_throw_error(e.get_errno())
-            << "Failed to open IST listener at "
-            << uri_bind.to_string()
+            << "Failed to open IST listener at " << uri_bind.to_string()
             << "', asio error '" << e.what() << "'";
     }
 
@@ -372,9 +345,10 @@ galera::ist::Receiver::prepare(wsrep_seqno_t const first_seqno,
 
     running_ = true;
 
-    log_info << "Prepared IST receiver for " << first_seqno << '-'
-             << last_seqno << ", listening at: "
-             << acceptor_->listen_addr();
+    log_info << "Prepared IST receiver for "
+             << first_seqno << '-' << last_seqno
+             << ", listening at: " << acceptor_->listen_addr()
+             << ", waiting for connection to: " << recv_addr_;
 
     return recv_addr_;
 }
@@ -785,8 +759,6 @@ void galera::ist::Receiver::ready(wsrep_seqno_t const first)
 }
 
 
-
-
 wsrep_seqno_t galera::ist::Receiver::finished()
 {
     if (recv_addr_ == "")
@@ -850,6 +822,15 @@ void galera::ist::Receiver::interrupt()
     }
 }
 
+const std::string& galera::ist::Receiver::conf_recv_addr_key()
+{
+    return CONF_RECV_ADDR;
+}
+
+const std::string& galera::ist::Receiver::conf_bind_addr_key()
+{
+    return CONF_BIND_ADDR;
+}
 
 galera::ist::Sender::Sender(const gu::Config&  conf,
                             gcache::GCache&    gcache,

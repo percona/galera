@@ -44,21 +44,32 @@ Config::Config (int argc, char* argv[])
       donor_   (),
       options_ (),
       log_     (),
+<<<<<<< HEAD
       cfg_     (),
       recv_script_ (),
       wait_for_recv_script_exit_(false),
       post_recv_script_(),
+||||||| 5d07ad0a
+      cfg_     (),
+=======
+>>>>>>> release_26.4.27
       workdir_ (),
+<<<<<<< HEAD
       extended_exit_codes_(false),
 #if defined(WITH_COREDUMPER) && WITH_COREDUMPER
       coredumper_ (),
 #endif
       exit_    (false)
+||||||| 5d07ad0a
+      exit_    (false)
+=======
+      cfg_     ()
+>>>>>>> release_26.4.27
 {
     po::options_description other ("Other options");
     other.add_options()
-        ("version,v", "Print version & exit")
-        ("help,h",    "Show help message & exit")
+        ("version,v", "Print version and exit")
+        ("help,h",    "Show help message and exit")
         ;
 
     // only these are read from cfg file
@@ -111,15 +122,23 @@ Config::Config (int argc, char* argv[])
     {
         std::cerr << "\nUsage: " << argv[0] << " [options] [group address]\n"
                   << cmdline_opts << std::endl;
-        exit_= true;
-        return;
+        throw Exit();
     }
 
     if (vm.count("version"))
     {
+<<<<<<< HEAD
         log_info << GALERA_VER << "." << GALERA_REV;
         exit_= true;
         return;
+||||||| 5d07ad0a
+        log_info << GALERA_VER << ".r" << GALERA_REV;
+        exit_= true;
+        return;
+=======
+        log_info << GALERA_VER << ".r" << GALERA_REV;
+        throw Exit();
+>>>>>>> release_26.4.27
     }
 
     if (vm.count("cfg"))
