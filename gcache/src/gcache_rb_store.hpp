@@ -239,9 +239,26 @@ namespace gcache
         void          open_preamble(bool recover);
         void          close_preamble();
 
-        // returns lower bound (not inclusive) of valid seqno range
-        seqno_t       scan(off_t offset, int scan_step);
-        void          recover(off_t offset, int version);
+        // returns lower bound (not inclusive) of valid seqno range.
+        //
+        // preamble_seqno_min / preamble_seqno_max are the seqno_min /
+        // seqno_max values read from the on-disk preamble (the bounds
+        // recorded by the last clean shutdown). Pass SEQNO_ILL for either
+        // when no preamble bound is available; in that case scan() falls
+        // back to the looser size-based plausibility check.
+        seqno_t       scan(off_t offset, int scan_step,
+                           seqno_t preamble_seqno_min,
+                           seqno_t preamble_seqno_max);
+        void          recover(off_t offset, int version,
+                              seqno_t preamble_seqno_min,
+                              seqno_t preamble_seqno_max);
+        // Validates a recovered buffer's seqno_g against the preamble
+        // bounds and the seqnos already mapped in seqno2ptr_. Throws
+        // std::runtime_error when seqno_g is implausible.
+        void          do_sanity_checks(BufferHeader* bh,
+                                       seqno_t seqno_g,
+                                       seqno_t preamble_seqno_min,
+                                       seqno_t preamble_seqno_max) const;
 
         void          estimate_space(bool zero_out = false);
 
