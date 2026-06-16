@@ -14,27 +14,12 @@ export CK_TIMEOUT_MULTIPLIER=5
 override_dh_auto_test:
 	dh_auto_test -O--no-parallel -- ARGS=--output-on-failure
 
-# Galera Version
-ifneq (,$(filter version=%,$(DEB_BUILD_OPTIONS)))
-       VERSION = $(filter version=%,$(DEB_BUILD_OPTIONS))
-       SCONS_ARGS += $(VERSION)
-endif
-
-# Galera revision number
-ifneq (,$(filter revno=%,$(DEB_BUILD_OPTIONS)))
-       REVNO = $(filter revno=%,$(DEB_BUILD_OPTIONS))
-       SCONS_ARGS += $(REVNO)
-endif
-
 # Start earlier than MySQL which has value 19
 override_dh_installinit-arch:
 	dh_installinit -n --name=garb -- defaults 18 22
 
 override_dh_installsystemd:
 	dh_installsystemd --name=garb
-
-override_dh_shlibdeps:
-	dh_shlibdeps --dpkg-shlibdeps-params=--ignore-missing-info
 
 %:
 
