@@ -175,13 +175,6 @@ if psi:
 
 opt_flags = opt_flags + ' -DPXC'
 
-# parse psi flag option
-psi        = int(ARGUMENTS.get('psi', 0))
-if psi:
-    opt_flags = opt_flags + ' -DHAVE_PSI_INTERFACE'
-
-opt_flags = opt_flags + ' -DPXC'
-
 GALERA_VER = ARGUMENTS.get('version', '4.27')
 GALERA_REV = ARGUMENTS.get('revno', 'XXXX')
 

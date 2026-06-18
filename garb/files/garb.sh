@@ -67,12 +67,11 @@ program_start() {
             fi
         fi
         echo -n $"Starting $prog: "
-        daemon --user nobody $prog "$@" >/dev/null
+        runuser nobody -s /bin/sh -c "$prog $*" >/dev/null
         rcode=$?
-        if [ $rcode -eq 0 ]; then
-            pidof $prog > $PIDFILE || rcode=$?
-        fi
-        [ $rcode -eq 0 ] && echo_success || echo_failure
+        sleep 2
+        [ $rcode -eq 0 ] && pidof $prog > $PIDFILE \
+        && echo_success || echo_failure
         echo
     else
         if [ -r $PIDFILE ]; then
@@ -85,9 +84,6 @@ program_start() {
                 log_daemon_msg "Removing stale pid file $PIDFILE"
                 rm -f $PIDFILE
             fi
-        fi
-        if [ -r $PIDFILE ]; then
-            log_daemon_msg "Stale pid file with $(cat $PIDFILE)"
         fi
         log_daemon_msg "Starting $prog: "
         start-stop-daemon --start --quiet -c nobody --background \
