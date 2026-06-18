@@ -173,6 +173,7 @@ void gcomm::PC::connect(bool start_prim)
             pstack_.pop_proto(pc_);
             pstack_.pop_proto(evs_);
             pstack_.pop_proto(gmcast_);
+            closed_ = true;
             gu_throw_error(ETIMEDOUT) << "failed to reach primary view (" << throw_message << ")";
         }
     }
@@ -189,6 +190,10 @@ void gcomm::PC::connect(const gu::URI& uri)
 
 void gcomm::PC::close(bool force)
 {
+    if (closed_ == true)
+    {
+        return;
+    }
     if (force == true)
     {
         log_info << "Forced PC close";
@@ -196,8 +201,6 @@ void gcomm::PC::close(bool force)
         // Don't bother closing PC and EVS at this point. Currently
         // there is no way of knowing why forced close was issued,
         // so graceful close of PC and/or EVS may not be safe.
-        // pc_->close();
-        // evs_->close();
     }
     else
     {

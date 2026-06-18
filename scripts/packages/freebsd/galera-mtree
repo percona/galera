@@ -953,11 +953,4 @@
     ..
     www
     ..
-    var
-        lib
-/set type=dir uname=nobody gname=nobody mode=0755
-            galera
-            ..
-        ..
-    ..
 ..

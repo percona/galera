@@ -70,10 +70,10 @@ typedef unsigned long long ull;
 gu_fifo_t *gu_fifo_create (size_t length, size_t item_size)
 {
     int row_pwr    = GCS_FIFO_MIN_ROW_POWER;
-    ull row_len    = 1 << row_pwr;
+    ull row_len    = 1ULL << row_pwr;
     ull row_size   = row_len * item_size;
     int array_pwr  = 1; // need at least 2 rows for alteration
-    ull array_len  = 1 << array_pwr;
+    ull array_len  = 1ULL << array_pwr;
     ull array_size = array_len * sizeof(void*);
     gu_fifo_t *ret = NULL;
 
@@ -83,12 +83,12 @@ gu_fifo_t *gu_fifo_create (size_t length, size_t item_size)
         while (array_len * row_len < length) {
             if (array_size < row_size) {
                 array_pwr++;
-                array_len = 1 << array_pwr;
+                array_len = 1ULL << array_pwr;
                 array_size = array_len * sizeof(void*);
             }
             else {
                 row_pwr++;
-                row_len = 1 << row_pwr;
+                row_len = 1ULL << row_pwr;
                 row_size = row_len * item_size;
             }
         }
@@ -532,8 +532,8 @@ void gu_fifo_destroy   (gu_fifo_t *queue)
 
     while (gu_mutex_destroy (&queue->lock)) continue;
 
-    /* only one row might be left */
     {
+        /* only one row might be left */
         ulong row = FIFO_ROW(queue, queue->tail);
         if (queue->rows[row]) {
 #ifndef PXC

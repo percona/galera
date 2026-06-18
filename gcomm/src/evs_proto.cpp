@@ -549,10 +549,13 @@ std::string gcomm::evs::Proto::stats() const
     os << "\n\tdelivered {";
     std::copy(delivered_msgs_.begin(), delivered_msgs_.end(),
               std::ostream_iterator<long long int>(os, ", "));
-    os << "}\n\teff(delivered/sent) " <<
-        double(accumulate(delivered_msgs_.begin() + 1,
-                          delivered_msgs_.begin() + O_SAFE + 1, 0))
-        /double(accumulate(sent_msgs_.begin(), sent_msgs_.end(), 0));
+    const double delivered = double(accumulate(delivered_msgs_.begin() + 1,
+                                      delivered_msgs_.begin() + O_SAFE + 1, 0));
+    double sent = double(accumulate(sent_msgs_.begin(), sent_msgs_.end(), 0));
+    if (!sent)
+        sent = 1;
+
+    os << "}\n\teff(delivered/sent) " << delivered / sent;
     return os.str();
 }
 
@@ -2258,7 +2261,7 @@ void gcomm::evs::Proto::handle_foreign(const Message& msg)
         return;
     }
 
-    // Don't handle foreign messages in install phase.
+    // Ignore foreign messages in install phase.
     // This includes not only INSTALL state, but also
     // GATHER state after receiving install message.
     if (install_message_ != 0)
@@ -2655,7 +2658,7 @@ int gcomm::evs::Proto::handle_down(Datagram& wb, const ProtoDownMeta& dm)
                     input_map_->is_safe(input_map_->begin()) == true)
                 {
                     // If the input map state is still not good for fast path,
-                    // the situation is not likely to clear immediately. Return
+                    // the condition is not likely to clear immediately. Return
                     // error to retry later.
                     return EAGAIN;
                 }

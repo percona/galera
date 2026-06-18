@@ -44,7 +44,6 @@ Config::Config (int argc, char* argv[])
       donor_   (),
       options_ (),
       log_     (),
-      cfg_     (),
       recv_script_ (),
       wait_for_recv_script_exit_(false),
       post_recv_script_(),
@@ -53,12 +52,12 @@ Config::Config (int argc, char* argv[])
 #if defined(WITH_COREDUMPER) && WITH_COREDUMPER
       coredumper_ (),
 #endif
-      exit_    (false)
+      cfg_     ()
 {
     po::options_description other ("Other options");
     other.add_options()
-        ("version,v", "Print version & exit")
-        ("help,h",    "Show help message & exit")
+        ("version,v", "Print version and exit")
+        ("help,h",    "Show help message and exit")
         ;
 
     // only these are read from cfg file
@@ -103,23 +102,20 @@ Config::Config (int argc, char* argv[])
 
     if (!validate())
     {
-        exit_ = true;
-        return;
+        throw Exit();
     }
 
     if (vm.count("help"))
     {
         std::cerr << "\nUsage: " << argv[0] << " [options] [group address]\n"
                   << cmdline_opts << std::endl;
-        exit_= true;
-        return;
+        throw Exit();
     }
 
     if (vm.count("version"))
     {
         log_info << GALERA_VER << "." << GALERA_REV;
-        exit_= true;
-        return;
+        throw Exit();
     }
 
     if (vm.count("cfg"))

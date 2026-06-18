@@ -22,6 +22,7 @@
 #include <gu_logger.hpp>
 #include <gu_serialize.hpp>
 #include <gu_digest.hpp>
+#include <gu_lock.hpp>
 
 #include <stdlib.h>
 #include <stdbool.h>
@@ -225,6 +226,7 @@ struct gcs_conn
 
     /* #603, #606 join control */
     bool         need_to_join;
+    gu::Mutex    join_mutex;
     gu::GTID     join_gtid;
     int          join_code;
 
@@ -354,6 +356,7 @@ gcs_conn::gcs_conn(gu::Config& conf,
     stats_fc_received(),
     conf_id(),
     need_to_join(),
+    join_mutex(),
     join_gtid(),
     join_code(),
     sync_sent_(),
@@ -852,13 +855,16 @@ gcs_become_primary (gcs_conn_t* conn)
     }
 
     conn->join_gtid    = gu::GTID();
-    conn->need_to_join = false;
+    {
+        gu::Lock lock(conn->join_mutex);
+        conn->need_to_join = false;
+    }
 
     int ret;
 
     if ((ret = _release_flow_control (conn))) {
         gu_fatal ("Failed to release flow control: %d (%s)",
-                  ret, gcs_error_str(ret));
+                  ret, gcs_error_str(-ret));
         gcs_close (conn);
         abort();
     }
@@ -988,7 +994,10 @@ gcs_become_joined (gcs_conn_t* conn)
     if (gcs_shift_state (conn, GCS_CONN_JOINED)) {
         conn->fc_offset    = conn->queue_len;
         conn->join_gtid    = gu::GTID();
-        conn->need_to_join = false;
+        {
+            gu::Lock lock(conn->join_mutex);
+            conn->need_to_join = false;
+        }
         start_progress(conn);
         gu_debug("Become joined, FC offset %ld", conn->fc_offset);
         /* One of the cases when the node can become SYNCED */
@@ -1125,14 +1134,13 @@ s_join (gcs_conn_t* conn)
             gu_info("Sending JOIN failed: %s. "
                     "Will retry in new primary component.",
                     gcs_error_str(-err));
-            return 0;
+            break;
         default:
             gu_error("Sending JOIN failed: %d (%s).", err, gcs_error_str(-err));
-            return err;
         }
     }
 
-    return 0;
+    return err;
 }
 
 /*! Handles configuration action */
@@ -1299,7 +1307,20 @@ gcs_handle_act_conf (gcs_conn_t* conn, gcs_act_rcvd& rcvd)
         /* #603, #606 - duplicate JOIN msg in case we lost it */
         assert (conf.conf_id >= 0);
 
-        if (conn->need_to_join) s_join (conn);
+        {
+            gu::Lock lock(conn->join_mutex);
+
+            if (conn->need_to_join)
+            {
+                int err = s_join(conn);
+                if (err)
+                {
+                    log_info << "Failed to join on new configuration: "
+                             << err << "(" << gcs_error_str(err) << ")";
+                }
+                conn->need_to_join = err != 0;
+            }
+        }
 
         break;
     default:
@@ -1686,7 +1707,13 @@ static void *gcs_recv_thread (void *arg)
     // To avoid race between gcs_open() and the following state check in while()
     gu_cond_t tmp_cond; /* TODO: rework when concurrency in SM is allowed */
     gu_cond_init (&tmp_cond, NULL);
-    gcs_sm_enter(conn->sm, &tmp_cond, false, true);
+
+    if ((ret = gcs_sm_enter(conn->sm, &tmp_cond, false, true)))
+    {
+        gu_error("Failed to enter send monitor: %ld (%s)", ret, strerror(-ret));
+        gu_abort();
+    }
+
     gcs_sm_leave(conn->sm);
     gu_cond_destroy (&tmp_cond);
 
@@ -1724,8 +1751,16 @@ static void *gcs_recv_thread (void *arg)
             struct gcs_recv_act* err_act =
                 (struct gcs_recv_act*) gu_fifo_get_tail(conn->recv_q);
 
-            err_act->rcvd     = rcvd;
-            err_act->local_id = GCS_SEQNO_ILL;
+            if (err_act)
+            {
+                err_act->rcvd     = rcvd;
+                err_act->local_id = GCS_SEQNO_ILL;
+            }
+            else
+            {
+                gu_error("Can't get tail of recv");
+                gu_abort();
+            }
 
             GCS_FIFO_PUSH_TAIL (conn, rcvd.act.buf_len);
 
@@ -2720,9 +2755,13 @@ gcs_join (gcs_conn_t* conn, const gu::GTID& gtid, int const code)
     {
         conn->join_gtid    = gtid;
         conn->join_code    = code;
-        conn->need_to_join = true;
 
-        return s_join (conn);
+        gu::Lock lock(conn->join_mutex);
+
+        int ret = s_join(conn);
+        conn->need_to_join = ret != 0;
+
+        return ret;
     }
 
     assert(0);
@@ -2814,7 +2853,7 @@ _set_fc_limit (gcs_conn_t* conn, const char* value)
 
     if (limit > 0LL && *endptr == '\0') {
 
-        if (limit > LONG_MAX) limit = LONG_MAX;
+        if ((unsigned long long)limit > LONG_MAX) limit = LONG_MAX;
 
         gu_fifo_lock(conn->recv_q);
         {
@@ -2959,7 +2998,7 @@ _set_pkt_size (gcs_conn_t* conn, const char* value)
 
     if (pkt_size > 0 && *endptr == '\0') {
 
-        if (pkt_size > LONG_MAX) pkt_size = LONG_MAX;
+        if ((unsigned long long)pkt_size > LONG_MAX) pkt_size = LONG_MAX;
 
         if (conn->params.max_packet_size == pkt_size) return 0;
 
@@ -2987,7 +3026,7 @@ _set_recv_q_hard_limit (gcs_conn_t* conn, const char* value)
 
     if (limit > 0 && *endptr == '\0') {
 
-        if (limit > LONG_MAX) limit = LONG_MAX;
+        if ((unsigned long long)limit > LONG_MAX) limit = LONG_MAX;
 
         long long limit_fixed = limit * gcs_fc_hard_limit_fix;
 
