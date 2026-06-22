@@ -599,7 +599,6 @@ gcs_group_handle_comp_msg (gcs_group_t* group, const gcs_comp_msg_t* comp)
 {
     long        new_idx, old_idx;
     gcs_node_t* new_nodes = NULL;
-    ulong       new_memb  = 0;
 
     const bool prim_comp     = gcs_comp_msg_primary  (comp);
     const bool bootstrap     = gcs_comp_msg_bootstrap(comp);
@@ -717,9 +716,6 @@ gcs_group_handle_comp_msg (gcs_group_t* group, const gcs_comp_msg_t* comp)
                 break;
             }
         }
-        /* if wasn't found in new configuration, new member -
-         * need to do state exchange */
-        new_memb |= (old_idx == group->num);
     }
 
     /* free old nodes array */
