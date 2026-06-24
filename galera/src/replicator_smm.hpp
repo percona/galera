@@ -388,7 +388,19 @@ namespace galera
         void mark_corrupt_and_close()
         /* mark state as corrupt and try to leave cleanly */
         {
+#ifdef PXC
+            /*
+              Remove grastate.dat on shutdown to force a full SST on the next
+              startup.
+              The repl.force_sst_after_inconsistency option controls this
+              behavior: when enabled, the state file is removed; when disabled
+              (default), it is preserved to retain the previous behavior and
+              helps investigation.
+            */
+            st_.mark_corrupt(force_sst_after_inconsistency_);
+#else
             st_.mark_corrupt();
+#endif /* PXC */
             gu::Lock lock(closing_mutex_);
             start_closing();
         }
@@ -434,6 +446,9 @@ namespace galera
             static const std::string commit_order;
             static const std::string causal_read_timeout;
             static const std::string max_write_set_size;
+#ifdef PXC
+            static const std::string force_sst_after_inconsistency;
+#endif /* PXC */
         };
 
         typedef std::pair<std::string, std::string> Default;
@@ -1212,6 +1227,15 @@ namespace galera
         Monitor<ApplyOrder>  apply_monitor_;
         Monitor<CommitOrder> commit_monitor_;
         gu::datetime::Period causal_read_timeout_;
+#ifdef PXC
+        /*
+          repl.force_sst_after_inconsistency: when enabled, a node that leaves
+          the cluster due to an inconsistency removes grastate.dat, forcing a
+          full SST on the next startup. When disabled (default), the state file
+          is not removed.
+        */
+        bool                 force_sst_after_inconsistency_;
+#endif /* PXC */
 
         // counters
         gu::Atomic<size_t>    receivers_;

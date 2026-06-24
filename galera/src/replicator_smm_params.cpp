@@ -24,6 +24,10 @@ const std::string galera::ReplicatorSMM::Param::key_format =
     common_prefix + "key_format";
 const std::string galera::ReplicatorSMM::Param::max_write_set_size =
     common_prefix + "max_ws_size";
+#ifdef PXC
+const std::string galera::ReplicatorSMM::Param::force_sst_after_inconsistency =
+    common_prefix + "force_sst_after_inconsistency";
+#endif /* PXC */
 
 int const galera::ReplicatorSMM::MAX_PROTO_VER(11);
 
@@ -38,6 +42,13 @@ galera::ReplicatorSMM::Defaults::Defaults() : map_()
     const int max_write_set_size(galera::WriteSetNG::MAX_SIZE);
     map_.insert(Default(Param::max_write_set_size,
                         gu::to_string(max_write_set_size)));
+#ifdef PXC
+    /*
+      Off by default: keep the historical behaviour of leaving grastate.dat
+      in place.
+    */
+    map_.insert(Default(Param::force_sst_after_inconsistency, "no"));
+#endif /* PXC */
 }
 
 const galera::ReplicatorSMM::Defaults galera::ReplicatorSMM::defaults;
@@ -62,6 +73,10 @@ galera::ReplicatorSMM::InitConfig::InitConfig(gu::Config&       conf,
 
     conf.set_flags(Param::causal_read_timeout, gu::Config::Flag::type_duration);
     conf.set_flags(Param::max_write_set_size, gu::Config::Flag::type_integer);
+#ifdef PXC
+    conf.set_flags(Param::force_sst_after_inconsistency,
+                   gu::Config::Flag::type_bool);
+#endif /* PXC */
     conf.set_flags(Param::base_dir, gu::Config::Flag::read_only);
     conf.set_flags(Param::base_port, gu::Config::Flag::read_only |
                    gu::Config::Flag::type_integer);
@@ -192,6 +207,12 @@ galera::ReplicatorSMM::set_param (const std::string& key,
     {
         trx_params_.max_write_set_size_ = gu::from_string<int>(value);
     }
+#ifdef PXC
+    else if (key == Param::force_sst_after_inconsistency)
+    {
+        force_sst_after_inconsistency_ = gu::Config::from_config<bool>(value);
+    }
+#endif /* PXC */
     else
     {
         log_warn << "parameter '" << key << "' not found";

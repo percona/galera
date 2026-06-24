@@ -30,7 +30,15 @@ public:
 
     void mark_unsafe();
     void mark_safe();
+#ifdef PXC
+    /*
+     Mark the state as corrupt.
+     When remove_state_file is true the state file is unlinked as well.
+    */
+    void mark_corrupt(bool remove_state_file = false);
+#else
     void mark_corrupt();
+#endif /* PXC */
     void mark_uncorrupt(const wsrep_uuid_t& u, wsrep_seqno_t s);
 
     bool corrupt() const { return corrupt_; }
@@ -75,6 +83,11 @@ private:
 
     void write_file (const wsrep_uuid_t& u, const wsrep_seqno_t s,
                      bool safe_to_bootstrap);
+
+#ifdef PXC
+    /* Unlink the state file. Caller must hold mtx_. */
+    void unlink_state_file();
+#endif /* PXC */
 
     SavedState (const SavedState&);
     SavedState& operator=(const SavedState&);
