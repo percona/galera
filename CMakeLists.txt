@@ -129,8 +129,8 @@ add_subdirectory(scripts/packages)
 add_subdirectory(wsrep/tests)
 
 # Make the install destination for documentation files configurable
-if(NOT DEFINED INSTALL_DOCDIR)
-  set(INSTALL_DOCDIR "doc" CACHE STRING "path to install documentation to")
+if(NOT INSTALL_DOCDIR)
+  set(INSTALL_DOCDIR "doc" CACHE STRING "path to install documentation to" FORCE)
 endif()
 
 if (NOT ${CMAKE_SYSTEM_NAME} MATCHES ".*BSD")
