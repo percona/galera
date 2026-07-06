@@ -14,6 +14,13 @@ libgcomm_env.Append(CPPPATH = Split('''
 
 libgcomm_env.Append(CXXFLAGS = ' -fno-strict-aliasing')
 
+# Enable C-style logging macros (gu_error, gu_info, ...) from gu_log.h in
+# C++ TUs. cmake/common.cmake defines this globally for the cmake build path;
+# scons needs the same opt-in per-module or headers like fair_send_queue.hpp
+# that use gu_error(...) fail to compile with 'not declared in this scope'.
+# Mirrors gcs/src/SConscript.
+libgcomm_env.Append(CPPFLAGS = ' -DGALERA_LOG_H_ENABLE_CXX')
+
 libgcomm_sources = [
     'conf.cpp',
     'defaults.cpp',
