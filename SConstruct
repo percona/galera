@@ -710,6 +710,14 @@ if not 'clang' in cxx_version:
         conf.env.Prepend(CXXFLAGS = '-Wnon-virtual-dtor ')
     conf.env.Prepend(CXXFLAGS = '-Wold-style-cast ')
 
+# Enable C-style logging macros (gu_error, gu_info, ...) from gu_log.h in
+# every C++ TU across ALL scons modules. cmake/common.cmake defines this
+# globally for the cmake build path; scons needs the same opt-in centrally
+# because otherwise every module's SConscript would have to add it, and
+# any new callsite of gu_error(fmt, ...) in a C++ TU would silently break
+# the scons build path (which the tarball packaging uses).
+conf.env.Append(CPPFLAGS = ' -DGALERA_LOG_H_ENABLE_CXX')
+
 env = conf.Finish()
 
 print('Global flags:')
