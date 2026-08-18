@@ -1,5 +1,5 @@
 [submodule "wsrep-API"]
 	path = wsrep/src
-	url = https://github.com/percona/wsrep-API.git
+	url = https://github.com/jaideepkarande/wsrep-API.git
 	branch = percona-4.x-8.0
 
