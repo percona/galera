@@ -296,19 +296,32 @@ SavedState::mark_safe()
     }
 }
 
+#ifdef PXC
+void
+SavedState::mark_corrupt(bool remove_state_file)
+#else
 void
 SavedState::mark_corrupt()
+#endif /* PXC */
 {
     gu::Lock lock(mtx_); ++total_locks_;
 
-    if (corrupt_) return;
+    if (!corrupt_)
+    {
+        uuid_  = WSREP_UUID_UNDEFINED;
+        seqno_ = WSREP_SEQNO_UNDEFINED;
+        corrupt_ = true;
 
-    uuid_  = WSREP_UUID_UNDEFINED;
-    seqno_ = WSREP_SEQNO_UNDEFINED;
-    corrupt_ = true;
+        write_file (WSREP_UUID_UNDEFINED, WSREP_SEQNO_UNDEFINED,
+                    safe_to_bootstrap_);
+    }
 
-    write_file (WSREP_UUID_UNDEFINED, WSREP_SEQNO_UNDEFINED,
-                safe_to_bootstrap_);
+#ifdef PXC
+    if (remove_state_file)
+    {
+        unlink_state_file();
+    }
+#endif /* PXC */
 }
 
 void
@@ -325,6 +338,27 @@ SavedState::mark_uncorrupt(const wsrep_uuid_t& u, wsrep_seqno_t s)
 
     write_file (u, s, safe_to_bootstrap_);
 }
+
+#ifdef PXC
+/* Caller must hold mtx_. */
+void
+SavedState::unlink_state_file()
+{
+    if (::unlink(filename_.c_str()) == 0)
+    {
+        log_info << "Removed state file '" << filename_
+                 << "' because the node left the cluster due to an "
+                    "inconsistency. The node will request a full SST "
+                    "on the next start.";
+    }
+    else if (errno != ENOENT)
+    {
+        log_warn << "Could not remove state file '" << filename_
+                 << "': " << ::strerror(errno)
+                 << ". Remove it manually to force SST on the next start.";
+    }
+}
+#endif /* PXC */
 
 void
 SavedState::write_file(const wsrep_uuid_t& u, const wsrep_seqno_t s,

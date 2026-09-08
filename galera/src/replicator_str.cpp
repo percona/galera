@@ -1600,7 +1600,16 @@ void ReplicatorSMM::process_IST_writeset(void* recv_ctx,
     }
     catch (...)
     {
+#ifdef PXC
+        /*
+          Applying an IST writeset failed, if
+          repl.force_sst_after_inconsistency is enabled remove the grastate.dat
+          state file to force SST.
+        */
+        st_.mark_corrupt(force_sst_after_inconsistency_);
+#else
         st_.mark_corrupt();
+#endif /* PXC */
         throw;
     }
     GU_DBUG_SYNC_WAIT("recv_IST_after_apply_trx");
@@ -1700,6 +1709,10 @@ void ReplicatorSMM::recv_IST(void* recv_ctx)
             break;
         }
 
+#ifdef PXC
+        // Drop grastate.dat and force SST on the next start.
+        st_.mark_corrupt(force_sst_after_inconsistency_);
+#endif /* PXC */
         log_fatal << os.str();
         abort();
     }
