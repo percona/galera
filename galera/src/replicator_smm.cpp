@@ -292,15 +292,17 @@ galera::ReplicatorSMM::ReplicatorSMM(const struct wsrep_init_args* args)
 #ifdef PXC
     /* Other nodes recognize the arbitrator by the stateless flag and an
        empty incoming address, and do not wait for it to end NBO operations
-       (see galera_view.cpp). Warn if this data node looks the same. */
+       (see galera_view.cpp). A data node must never look the same, so
+       refuse to start before joining the cluster. */
     if (config_.get("gcs.stateless", false) &&
         NULL != args->node_incoming && '\0' == args->node_incoming[0])
     {
-        log_warn << "gcs.stateless is set and the node has no address for "
-                 << "incoming client connections, so the cluster will treat "
-                 << "it as an arbitrator and will not wait for it to finish "
-                 << "NBO operations. Unset gcs.stateless or set "
-                 << "wsrep_node_incoming_address.";
+        gu_throw_error(EINVAL)
+            << "gcs.stateless is set and the node has no address for "
+            << "incoming client connections, so the cluster would treat it "
+            << "as an arbitrator and would not wait for it to finish NBO "
+            << "operations. Unset gcs.stateless or set "
+            << "wsrep_node_incoming_address.";
     }
 #endif /* PXC */
 
