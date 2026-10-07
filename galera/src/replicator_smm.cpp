@@ -289,6 +289,21 @@ galera::ReplicatorSMM::ReplicatorSMM(const struct wsrep_init_args* args)
         // update gcache position to one supplied by app.
     }
 
+#ifdef PXC
+    /* Other nodes recognize the arbitrator by the stateless flag and an
+       empty incoming address, and do not wait for it to end NBO operations
+       (see galera_view.cpp). Warn if this data node looks the same. */
+    if (config_.get("gcs.stateless", false) &&
+        NULL != args->node_incoming && '\0' == args->node_incoming[0])
+    {
+        log_warn << "gcs.stateless is set and the node has no address for "
+                 << "incoming client connections, so the cluster will treat "
+                 << "it as an arbitrator and will not wait for it to finish "
+                 << "NBO operations. Unset gcs.stateless or set "
+                 << "wsrep_node_incoming_address.";
+    }
+#endif /* PXC */
+
     build_stats_vars(wsrep_stats_);
 }
 
@@ -2797,8 +2812,14 @@ static void validate_local_prim_view_info(const wsrep_view_info_t* view_info,
     }
 }
 
+#ifdef PXC
+bool galera::ReplicatorSMM::skip_prim_conf_change(
+    const wsrep_view_info_t& view_info, const gcs_act_cchange& conf,
+    int const proto_ver)
+#else
 bool galera::ReplicatorSMM::skip_prim_conf_change(
     const wsrep_view_info_t& view_info, int const proto_ver)
+#endif /* PXC */
 {
     wsrep_seqno_t cc_seqno(WSREP_SEQNO_UNDEFINED);
     bool keep(false); // keep in cache
@@ -2814,9 +2835,15 @@ bool galera::ReplicatorSMM::skip_prim_conf_change(
             assert(cc_seqno == cert_.position() + 1);
             const int trx_ver
                 (std::get<0>(get_trx_protocol_versions(proto_ver)));
+#ifdef PXC
+            cert_.adjust_position(View(conf),
+                                  gu::GTID(view_info.state_id.uuid, cc_seqno),
+                                  trx_ver);
+#else
             cert_.adjust_position(view_info,
                                   gu::GTID(view_info.state_id.uuid, cc_seqno),
                                   trx_ver);
+#endif /* PXC */
             // even if CC was part of SST, it still may carry updated protocol
             // version and updated CC seqno
             finish_local_prim_conf_change(proto_ver, cc_seqno, "CC");
@@ -3204,7 +3231,11 @@ void galera::ReplicatorSMM::process_prim_conf_change(void* recv_ctx,
     if (conf.seqno <= sst_seqno_)
     {
         // contained already in SST, skip any further processing
+#ifdef PXC
+        if (skip_prim_conf_change(*view_info, conf, group_proto_version))
+#else
         if (skip_prim_conf_change(*view_info, group_proto_version))
+#endif /* PXC */
         {
             // was not part of IST, don't discard
             cc_buf_discard.keep(conf.seqno);
@@ -3298,9 +3329,15 @@ void galera::ReplicatorSMM::process_prim_conf_change(void* recv_ctx,
     /* since CC does not pass certification, need to adjust cert
      * position explicitly (when processed in order) */
     /* flushes service thd, must be called before gcache_.seqno_reset()*/
+#ifdef PXC
+    cert_.adjust_position(View(conf),
+                          gu::GTID(group_uuid, group_seqno),
+                          trx_params_.version_);
+#else
     cert_.adjust_position(*view_info,
                           gu::GTID(group_uuid, group_seqno),
                           trx_params_.version_);
+#endif /* PXC */
 
     if (first_view)
     {

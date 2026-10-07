@@ -295,6 +295,10 @@ gcs_node_update_status (gcs_node_t* node, const gcs_state_quorum_t* quorum)
 
     node->stateless = (gcs_state_msg_flags (node->state_msg) &
                        GCS_STATE_FSTATELESS);
+#ifdef PXC
+    node->arb_nbo = (gcs_state_msg_flags (node->state_msg) &
+                     GCS_STATE_FPXC_ARB_NBO);
+#endif /* PXC */
 }
 
 void

@@ -32,6 +32,19 @@ enum Version
     VER0 = 0
 };
 
+#ifdef PXC
+/* Optional trailer after the member array: a marker byte, a trailer version
+   byte and one flags byte per member. It does not change the CC version:
+   older readers stop after the member array and ignore the rest up to the
+   checksum, which still covers the whole buffer. A CC without the trailer
+   (written by an older node) has zero padding there and reads as "no
+   flags". */
+static char const    CC_MEMB_FLAGS_MARKER  = 'F';
+static char const    CC_MEMB_FLAGS_VER1    = 1;
+static uint8_t const CC_MEMB_FLAG_STATELESS = 0x01;
+static uint8_t const CC_MEMB_FLAG_ARB_NBO   = 0x02;
+#endif /* PXC */
+
 static Version
 _version(int ver)
 {
@@ -168,6 +181,22 @@ gcs_act_cchange::gcs_act_cchange(const void* const cc_buf, int const cc_size)
         memb.push_back(m);
     }
 
+#ifdef PXC
+    size_t const avail(check_offset -
+                       static_cast<size_t>(b - static_cast<const char*>(cc_buf)));
+    if (avail >= 2 + memb.size() && CC_MEMB_FLAGS_MARKER == b[0] &&
+        CC_MEMB_FLAGS_VER1 == b[1])
+    {
+        b += 2;
+        for (size_t i(0); i < memb.size(); ++i, ++b)
+        {
+            uint8_t const flags(static_cast<uint8_t>(b[0]));
+            memb[i].stateless_ = (flags & CC_MEMB_FLAG_STATELESS);
+            memb[i].arb_nbo_   = (flags & CC_MEMB_FLAG_ARB_NBO);
+        }
+    }
+#endif /* PXC */
+
     assert(static_cast<size_t>(b - static_cast<const char*>(cc_buf)) <= check_offset);
 }
 
@@ -211,7 +240,12 @@ gcs_act_cchange::write(void** buf) const
        << memb.size();
 
     std::string const str(os.str());
+#ifdef PXC
+    int const payload_len(1 + str.length() + 1 + _memb_size(memb) +
+                          2 + memb.size() /* member flags trailer */);
+#else
     int const payload_len(1 + str.length() + 1 + _memb_size(memb));
+#endif /* PXC */
     int const check_len(_checksum_len(cc_ver)); // checksum length
 
     // total message length, with necessary padding for alignment
@@ -251,6 +285,17 @@ gcs_act_cchange::write(void** buf) const
         b[0] = m.state_; ++b;
     }
 
+#ifdef PXC
+    b[0] = CC_MEMB_FLAGS_MARKER; ++b;
+    b[0] = CC_MEMB_FLAGS_VER1;   ++b;
+    for (size_t i(0); i < memb.size(); ++i)
+    {
+        b[0] = (memb[i].stateless_ ? CC_MEMB_FLAG_STATELESS : 0) |
+               (memb[i].arb_nbo_   ? CC_MEMB_FLAG_ARB_NBO   : 0);
+        ++b;
+    }
+#endif /* PXC */
+
     int const check_offset(ret - check_len); // writing checksum to the end
     assert(gu::ptr_offset(*buf, check_offset) >= b);
     b = static_cast<char*>(gu::ptr_offset(*buf, check_offset));
@@ -277,6 +322,10 @@ gcs_act_cchange::member::operator==(const gcs_act_cchange::member& other) const
         name_     == other.name_     &&
         incoming_ == other.incoming_ &&
         cached_   == other.cached_   &&
+#ifdef PXC
+        stateless_ == other.stateless_ &&
+        arb_nbo_   == other.arb_nbo_   &&
+#endif /* PXC */
         state_    == other.state_
         );
 }

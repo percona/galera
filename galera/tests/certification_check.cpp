@@ -1492,6 +1492,103 @@ START_TEST(cert_certify_no_match)
 END_TEST
 
 
+#ifdef PXC
+// PXC-5300: arbitrator members (stateless and without incoming address) must
+// not be part of the NBO end barrier, whatever their name.
+static void add_member(gcs_act_cchange& cc, int const id, const char* name,
+                       const char* incoming, bool const stateless,
+                       bool const arb_nbo = true)
+{
+    gcs_act_cchange::member m;
+    m.uuid_.data[0] = id;
+    m.name_         = name;
+    m.incoming_     = incoming;
+    m.stateless_    = stateless;
+    m.arb_nbo_      = arb_nbo;
+    cc.memb.push_back(m);
+}
+
+static wsrep_uuid_t memb_id(const gcs_act_cchange& cc, int const i)
+{
+    return cc.memb[i].uuid_;
+}
+
+START_TEST(test_view_skips_arbitrator)
+{
+    // Two data nodes and a garbd started with a custom --name
+    gcs_act_cchange cc;
+    add_member(cc, 1, "node1", "127.0.0.1:3306", false);
+    add_member(cc, 2, "node2", "127.0.0.1:3307", false);
+    add_member(cc, 3, "my_arbitrator", "", true);
+
+    galera::View const view(cc);
+    galera::View::MembSet ended;
+    ended.insert(memb_id(cc, 0));
+    ck_assert(!view.subset_of(ended));
+    ended.insert(memb_id(cc, 1));
+    ck_assert_msg(view.subset_of(ended),
+                  "data nodes have ended NBO, arbitrator must be ignored");
+}
+END_TEST
+
+START_TEST(test_view_keeps_data_nodes)
+{
+    // A stateless data node with incoming address, and a data node without
+    // incoming address, must still be waited for.
+    gcs_act_cchange cc;
+    add_member(cc, 1, "node1", "127.0.0.1:3306", false);
+    add_member(cc, 2, "node2", "127.0.0.1:3307", true);
+    add_member(cc, 3, "garb",  "", false);
+
+    galera::View const view(cc);
+    galera::View::MembSet ended;
+    ended.insert(memb_id(cc, 0));
+    ck_assert(!view.subset_of(ended));
+    ended.insert(memb_id(cc, 1));
+    ck_assert(!view.subset_of(ended));
+    ended.insert(memb_id(cc, 2));
+    ck_assert(view.subset_of(ended));
+}
+END_TEST
+
+START_TEST(test_view_mixed_version)
+{
+    // One data node is an older version that does not leave arbitrators
+    // out: all nodes must keep waiting for the arbitrator, as before.
+    gcs_act_cchange cc;
+    add_member(cc, 1, "node1", "127.0.0.1:3306", false);
+    add_member(cc, 2, "node2", "127.0.0.1:3307", false, false);
+    add_member(cc, 3, "my_arbitrator", "", true, false);
+
+    galera::View const view(cc);
+    galera::View::MembSet ended;
+    ended.insert(memb_id(cc, 0));
+    ended.insert(memb_id(cc, 1));
+    ck_assert_msg(!view.subset_of(ended),
+                  "mixed-version view must wait for the arbitrator");
+    ended.insert(memb_id(cc, 2));
+    ck_assert(view.subset_of(ended));
+}
+END_TEST
+
+START_TEST(test_view_all_arbitrators)
+{
+    // If every member looks like an arbitrator, all of them are waited for.
+    gcs_act_cchange cc;
+    add_member(cc, 1, "garb", "", true);
+    add_member(cc, 2, "garb", "", true);
+
+    galera::View const view(cc);
+    galera::View::MembSet ended;
+    ck_assert(!view.subset_of(ended));
+    ended.insert(memb_id(cc, 0));
+    ck_assert(!view.subset_of(ended));
+    ended.insert(memb_id(cc, 1));
+    ck_assert(view.subset_of(ended));
+}
+END_TEST
+#endif /* PXC */
+
 Suite* certification_suite()
 {
     Suite* s(suite_create("certification"));
@@ -1512,6 +1609,15 @@ Suite* certification_suite()
     t = tcase_create("certification_nbo");
     tcase_add_test(t, test_certification_nbo);
     suite_add_tcase(s, t);
+
+#ifdef PXC
+    t = tcase_create("view_skips_arbitrator");
+    tcase_add_test(t, test_view_skips_arbitrator);
+    tcase_add_test(t, test_view_keeps_data_nodes);
+    tcase_add_test(t, test_view_mixed_version);
+    tcase_add_test(t, test_view_all_arbitrators);
+    suite_add_tcase(s, t);
+#endif /* PXC */
 
     t = tcase_create("certification_commit_fragment");
     tcase_add_test(t, test_certification_commit_fragment);

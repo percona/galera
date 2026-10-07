@@ -2331,6 +2331,10 @@ gcs_group_act_conf (gcs_group_t*         group,
             m.incoming_ = group->nodes[idx].inc_addr;
             m.cached_   = gcs_node_cached(&group->nodes[idx]);
             m.state_    = group->nodes[idx].status;
+#ifdef PXC
+            m.stateless_ = group->nodes[idx].stateless;
+            m.arb_nbo_   = group->nodes[idx].arb_nbo;
+#endif /* PXC */
 
             conf.memb.push_back(m);
         }
@@ -2379,6 +2383,9 @@ group_get_node_state (const gcs_group_t* const group, long const node_idx)
     if (node->count_last_applied) flags |= GCS_STATE_FCLA;
     if (node->bootstrap)          flags |= GCS_STATE_FBOOTSTRAP;
     if (node->stateless)          flags |= GCS_STATE_FSTATELESS;
+#ifdef PXC
+    flags |= GCS_STATE_FPXC_ARB_NBO;
+#endif /* PXC */
 #ifdef GCS_FOR_GARB
     int64_t const cached = GCS_SEQNO_ILL;
 #else

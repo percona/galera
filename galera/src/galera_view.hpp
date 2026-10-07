@@ -12,6 +12,9 @@
 #define GALERA_VIEW_HPP
 
 #include "wsrep_api.h" // for wsrep_view_info_t
+#ifdef PXC
+#include "gcs.hpp"       // for gcs_act_cchange
+#endif /* PXC */
 #include "gu_uuid.hpp"
 #include <set>
 
@@ -41,6 +44,10 @@ namespace galera
         View();
         // Construct View from wsrep_view_info_t
         View(const wsrep_view_info_t&);
+#ifdef PXC
+        // Construct View from configuration change, leaving out arbitrators
+        explicit View(const gcs_act_cchange&);
+#endif /* PXC */
         // Destructor
         ~View();
         // Return true if the members of the view are subset of
