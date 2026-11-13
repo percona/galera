@@ -11,6 +11,9 @@
 #include "gu_inttypes.hpp"
 #include "gu_init.h"
 #include "test_key.hpp"
+#ifdef PXC
+#include "galera_info.hpp" // galera_view_info_create()
+#endif /* PXC */
 
 #include <check.h>
 
@@ -77,7 +80,12 @@ namespace
 std::string const TestEnv::GCACHE_NAME = "cert.cache";
 
 static
+#ifdef PXC
+void run_wsinfo(const WSInfo* const wsi, size_t const nws, int const version,
+                const gcs_act_cchange* const view = 0)
+#else
 void run_wsinfo(const WSInfo* const wsi, size_t const nws, int const version)
+#endif /* PXC */
 {
     galera::TrxHandleMaster::Pool mp(
         sizeof(galera::TrxHandleMaster) + sizeof(galera::WriteSetOut),
@@ -88,6 +96,13 @@ void run_wsinfo(const WSInfo* const wsi, size_t const nws, int const version)
     galera::Certification cert(env.conf(), 0, 0);
 
     cert.assign_initial_position(gu::GTID(), version);
+#ifdef PXC
+    if (view)
+    {
+        cert.adjust_position(galera::View(*view),
+                             gu::GTID(view->uuid, 0), version);
+    }
+#endif /* PXC */
     galera::TrxHandleMaster::Params const trx_params(
         "", version, galera::KeySet::MAX_VERSION);
 
@@ -482,6 +497,76 @@ START_TEST(test_certification_nbo)
 }
 END_TEST
 
+
+#ifdef PXC
+/* PXC-5300: NBO begin/end write sets certified against a view with two data
+   nodes and an arbitrator (stateless, no incoming address). Based on a test
+   contributed with the upstream bug report. */
+START_TEST(test_certification_nbo_arbitrator)
+{
+    using galera::Certification;
+    using galera::TrxHandle;
+    using galera::void_cast;
+    const int version(galera::WriteSetNG::VER5);
+
+    WSInfo wsi[] = {
+        // NBO begin from node 1
+        { { {1, } }, 1, 1, { {void_cast("1"), 1} }, 1, false,
+          1, 1, 0, 0, TrxHandle::F_ISOLATION | TrxHandle::F_BEGIN,
+          galera::KeyData::BRANCH_KEY_TYPE, Certification::TEST_OK, {0}, 0 },
+        // NBO end from node 1: node 2 has not ended yet
+        { { {1, } }, 1, 1, { {void_cast("1"), 1} }, 1, false,
+          2, 2, 1, 1, TrxHandle::F_ISOLATION | TrxHandle::F_COMMIT,
+          galera::KeyData::BRANCH_KEY_TYPE, Certification::TEST_FAILED, {1}, 8 },
+        // A duplicate from node 1 must not substitute for node 2
+        { { {1, } }, 1, 1, { {void_cast("1"), 1} }, 1, false,
+          3, 3, 2, 2, TrxHandle::F_ISOLATION | TrxHandle::F_COMMIT,
+          galera::KeyData::BRANCH_KEY_TYPE, Certification::TEST_FAILED, {1}, 8 },
+        // NBO end from node 2 ends the NBO without the arbitrator
+        { { {2, } }, 1, 1, { {void_cast("1"), 1} }, 1, false,
+          4, 4, 3, 3, TrxHandle::F_ISOLATION | TrxHandle::F_COMMIT,
+          galera::KeyData::BRANCH_KEY_TYPE, Certification::TEST_OK, {1}, 8 },
+        // NBO end from the arbitrator (control cases only)
+        { { {3, } }, 1, 1, { {void_cast("1"), 1} }, 1, false,
+          5, 5, 4, 4, TrxHandle::F_ISOLATION | TrxHandle::F_COMMIT,
+          galera::KeyData::BRANCH_KEY_TYPE, Certification::TEST_OK, {1}, 8 }
+    };
+
+    gcs_act_cchange view;
+    view.uuid.data[0] = 42;
+    for (int i(1); i <= 3; ++i)
+    {
+        gcs_act_cchange::member member;
+        member.uuid_.data[0] = i;
+        member.state_        = GCS_NODE_STATE_SYNCED;
+        member.incoming_     = (i == 3 ? "" : "192.0.2.1:3306");
+        member.stateless_    = (i == 3);
+        member.arb_nbo_      = true;
+        view.memb.push_back(member);
+    }
+
+    // Through the CC serialization, as the record reaches certification
+    void* buf(0);
+    int const size(view.write(&buf));
+    gcs_act_cchange decoded(buf, size);
+    ::free(buf);
+    run_wsinfo(wsi, 4, version, &decoded);
+
+    // Control: without an arbitrator all three NBO ends are needed. This
+    // also reproduces the original hang: two data node ends do not suffice.
+    gcs_act_cchange no_arb(decoded);
+    no_arb.memb[2].stateless_ = false;
+    wsi[3].result = Certification::TEST_FAILED;
+    run_wsinfo(wsi, 5, version, &no_arb);
+
+    // Mixed version: a data node without arb_nbo keeps the old behaviour on
+    // every node, so the arbitrator is waited for as well.
+    gcs_act_cchange mixed(decoded);
+    mixed.memb[1].arb_nbo_ = false;
+    run_wsinfo(wsi, 5, version, &mixed);
+}
+END_TEST
+#endif /* PXC */
 
 START_TEST(test_certification_commit_fragment)
 {
@@ -1492,6 +1577,158 @@ START_TEST(cert_certify_no_match)
 END_TEST
 
 
+#ifdef PXC
+// PXC-5300: arbitrator members (stateless and without incoming address) must
+// not be part of the NBO end barrier, whatever their name.
+static void add_member(gcs_act_cchange& cc, int const id, const char* name,
+                       const char* incoming, bool const stateless,
+                       bool const arb_nbo = true)
+{
+    gcs_act_cchange::member m;
+    m.uuid_.data[0] = id;
+    m.name_         = name;
+    m.incoming_     = incoming;
+    m.stateless_    = stateless;
+    m.arb_nbo_      = arb_nbo;
+    cc.memb.push_back(m);
+}
+
+static wsrep_uuid_t memb_id(const gcs_act_cchange& cc, int const i)
+{
+    return cc.memb[i].uuid_;
+}
+
+START_TEST(test_view_skips_arbitrator)
+{
+    // Two data nodes and a garbd started with a custom --name
+    gcs_act_cchange cc;
+    add_member(cc, 1, "node1", "127.0.0.1:3306", false);
+    add_member(cc, 2, "node2", "127.0.0.1:3307", false);
+    add_member(cc, 3, "my_arbitrator", "", true);
+
+    galera::View const view(cc);
+    galera::View::MembSet ended;
+    ended.insert(memb_id(cc, 0));
+    ck_assert(!view.subset_of(ended));
+    ended.insert(memb_id(cc, 1));
+    ck_assert_msg(view.subset_of(ended),
+                  "data nodes have ended NBO, arbitrator must be ignored");
+}
+END_TEST
+
+START_TEST(test_view_keeps_data_nodes)
+{
+    // A stateless data node with incoming address, and a data node without
+    // incoming address, must still be waited for.
+    gcs_act_cchange cc;
+    add_member(cc, 1, "node1", "127.0.0.1:3306", false);
+    add_member(cc, 2, "node2", "127.0.0.1:3307", true);
+    add_member(cc, 3, "garb",  "", false);
+
+    galera::View const view(cc);
+    galera::View::MembSet ended;
+    ended.insert(memb_id(cc, 0));
+    ck_assert(!view.subset_of(ended));
+    ended.insert(memb_id(cc, 1));
+    ck_assert(!view.subset_of(ended));
+    ended.insert(memb_id(cc, 2));
+    ck_assert(view.subset_of(ended));
+}
+END_TEST
+
+START_TEST(test_view_mixed_version)
+{
+    // One data node is an older version that does not leave arbitrators
+    // out: all nodes must keep waiting for the arbitrator, as before.
+    gcs_act_cchange cc;
+    add_member(cc, 1, "node1", "127.0.0.1:3306", false);
+    add_member(cc, 2, "node2", "127.0.0.1:3307", false, false);
+    add_member(cc, 3, "my_arbitrator", "", true, false);
+
+    galera::View const view(cc);
+    galera::View::MembSet ended;
+    ended.insert(memb_id(cc, 0));
+    ended.insert(memb_id(cc, 1));
+    ck_assert_msg(!view.subset_of(ended),
+                  "mixed-version view must wait for the arbitrator");
+    ended.insert(memb_id(cc, 2));
+    ck_assert(view.subset_of(ended));
+}
+END_TEST
+
+START_TEST(test_view_all_arbitrators)
+{
+    // If every member looks like an arbitrator, all of them are waited for.
+    gcs_act_cchange cc;
+    add_member(cc, 1, "garb", "", true);
+    add_member(cc, 2, "garb", "", true);
+
+    galera::View const view(cc);
+    galera::View::MembSet ended;
+    ck_assert(!view.subset_of(ended));
+    ended.insert(memb_id(cc, 0));
+    ck_assert(!view.subset_of(ended));
+    ended.insert(memb_id(cc, 1));
+    ck_assert(view.subset_of(ended));
+}
+END_TEST
+#endif /* PXC */
+
+#ifdef PXC
+/* PXC-5300: the public view (delivered to the server, used for quorum) keeps
+   the arbitrator; only the NBO end barrier leaves it out. */
+START_TEST(test_view_preserves_public_membership)
+{
+    gcs_act_cchange cc;
+    add_member(cc, 1, "node1", "127.0.0.1:3306", false);
+    add_member(cc, 2, "node2", "127.0.0.1:3307", false);
+    add_member(cc, 3, "my_arbitrator", "", true);
+
+    wsrep_uuid_t my_uuid(WSREP_UUID_UNDEFINED);
+    wsrep_view_info_t* const full(galera_view_info_create(cc, 0, 0, my_uuid));
+    ck_assert_int_eq(full->memb_num, 3);
+
+    galera::View::MembSet ended;
+    ended.insert(memb_id(cc, 0));
+    ended.insert(memb_id(cc, 1));
+    ck_assert(!galera::View(*full).subset_of(ended)); // old barrier
+    ck_assert(galera::View(cc).subset_of(ended));     // NBO barrier
+    ended.insert(memb_id(cc, 2));
+    ck_assert(galera::View(*full).subset_of(ended));
+    ::free(full);
+}
+END_TEST
+
+/* PXC-5300: membership changes and multiple arbitrators. */
+START_TEST(test_view_membership_changes)
+{
+    gcs_act_cchange cc;
+    add_member(cc, 1, "node1", "127.0.0.1:3306", false);
+    add_member(cc, 2, "node2", "127.0.0.1:3307", false);
+    add_member(cc, 3, "arb1", "", true);
+
+    galera::View::MembSet ended;
+    ended.insert(memb_id(cc, 0));
+    ck_assert(!galera::View(cc).subset_of(ended));
+
+    // node2 leaves
+    cc.memb.erase(cc.memb.begin() + 1);
+    ck_assert(galera::View(cc).subset_of(ended));
+
+    // a second arbitrator joins
+    add_member(cc, 4, "arb2", "", true);
+    ck_assert(galera::View(cc).subset_of(ended));
+
+    // a data node joins and is a donor: it must still be waited for
+    add_member(cc, 5, "node5", "127.0.0.1:3308", false);
+    cc.memb.back().state_ = GCS_NODE_STATE_DONOR;
+    ck_assert(!galera::View(cc).subset_of(ended));
+    ended.insert(cc.memb.back().uuid_);
+    ck_assert(galera::View(cc).subset_of(ended));
+}
+END_TEST
+#endif /* PXC */
+
 Suite* certification_suite()
 {
     Suite* s(suite_create("certification"));
@@ -1511,7 +1748,21 @@ Suite* certification_suite()
 
     t = tcase_create("certification_nbo");
     tcase_add_test(t, test_certification_nbo);
+#ifdef PXC
+    tcase_add_test(t, test_certification_nbo_arbitrator);
+#endif /* PXC */
     suite_add_tcase(s, t);
+
+#ifdef PXC
+    t = tcase_create("view_skips_arbitrator");
+    tcase_add_test(t, test_view_skips_arbitrator);
+    tcase_add_test(t, test_view_keeps_data_nodes);
+    tcase_add_test(t, test_view_mixed_version);
+    tcase_add_test(t, test_view_preserves_public_membership);
+    tcase_add_test(t, test_view_membership_changes);
+    tcase_add_test(t, test_view_all_arbitrators);
+    suite_add_tcase(s, t);
+#endif /* PXC */
 
     t = tcase_create("certification_commit_fragment");
     tcase_add_test(t, test_certification_commit_fragment);

@@ -23,6 +23,11 @@
 #define GCS_STATE_FCLA       0x02 // count last applied (for JOINED node)
 #define GCS_STATE_FBOOTSTRAP 0x04 // part of prim bootstrap process
 #define GCS_STATE_FSTATELESS 0x08 // arbitrator or otherwise stateless node
+#ifdef PXC
+/* PXC-5300: the node leaves arbitrators out of the NBO end barrier. Older
+   nodes ignore this bit. */
+#define GCS_STATE_FPXC_ARB_NBO 0x80
+#endif /* PXC */
 
 #ifdef GCS_STATE_MSG_ACCESS
 typedef struct gcs_state_msg

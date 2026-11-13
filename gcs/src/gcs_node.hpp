@@ -51,6 +51,9 @@ struct gcs_node
     bool             count_last_applied; // should it be counted
     bool             bootstrap; // is part of prim comp bootstrap process
     bool             stateless;
+#ifdef PXC
+    bool             arb_nbo;   // leaves arbitrators out of NBO end barrier
+#endif /* PXC */
 };
 typedef struct gcs_node gcs_node_t;
 

@@ -461,13 +461,26 @@ struct gcs_act_cchange
 
     struct member
     {
+#ifdef PXC
+        member() : uuid_(), name_(), incoming_(), cached_(), state_(),
+                   stateless_(false), arb_nbo_(false) {}
+#else
         member() : uuid_(), name_(), incoming_(), cached_(), state_() {}
+#endif /* PXC */
         bool operator==(const member& other) const;
         gu_uuid_t      uuid_;
         std::string    name_;
         std::string    incoming_;
         gcs_seqno_t    cached_;
         gcs_node_state state_;
+#ifdef PXC
+        /* Stateless member (e.g. arbitrator). Serialized in an optional
+           trailer that older readers ignore, see gcs_act_cchange.cpp. */
+        bool           stateless_;
+        /* Member leaves arbitrators out of the NBO end barrier (PXC-5300).
+           Serialized in the same trailer. */
+        bool           arb_nbo_;
+#endif /* PXC */
     };
 
     std::vector<member> memb;

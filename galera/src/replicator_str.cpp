@@ -1899,8 +1899,13 @@ void galera::ReplicatorSMM::process_ist_conf_change(const gcs_act_cchange& conf)
     // Establish protocol version before adjusting cert position as
     // trx_params_.version is decided there.
     establish_protocol_versions (conf.repl_proto_ver);
+#ifdef PXC
+    cert_.adjust_position(View(conf), gu::GTID(conf.uuid, conf.seqno),
+                          trx_params_.version_);
+#else
     cert_.adjust_position(*view_info, gu::GTID(conf.uuid, conf.seqno),
                           trx_params_.version_);
+#endif /* PXC */
     update_incoming_list(*view_info);
     record_cc_seqnos(conf.seqno, "ist");
 
@@ -1961,8 +1966,13 @@ void ReplicatorSMM::ist_cc(const gcs_action& act, bool must_apply,
                primary component and NBO already finished in primary component,
                so if we reset nbo waiters, we may not get notifications from
                some nodes. The only way is to learn the history through IST */
+#ifdef PXC
+            cert_.adjust_position(View(conf), gu::GTID(conf.uuid, conf.seqno),
+                                  trx_params_.version_, false);
+#else
             cert_.adjust_position(*view_info, gu::GTID(conf.uuid, conf.seqno),
                                   trx_params_.version_, false);
+#endif /* PXC */
             // record CC related state seqnos needed for IST on DONOR
             record_cc_seqnos(conf.seqno, "preload");
             ::free(view_info);
