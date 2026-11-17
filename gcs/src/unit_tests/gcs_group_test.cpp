@@ -953,6 +953,12 @@ deliver_vote(gcs_group_t* const group, const std::vector<char>& buf)
     return ret;
 }
 
+/* PXC-4298 normalizes every failure vote to a hash of the Error_code:
+   list parsed from the message text, so differently worded messages for
+   the same logical failure vote identically. */
+extern int64_t compute_vote (const gu::GTID& gtid, uint64_t const code,
+                             const void* const msg, size_t const msg_len);
+
 /* Vote message text is optional and not necessarily NUL-terminated. */
 START_TEST(test_gcs_group_vote_msg_text)
 {
@@ -975,7 +981,12 @@ START_TEST(test_gcs_group_vote_msg_text)
 
         deliver_vote(group, buf);
         ck_assert(1000 == group->nodes[1].vote_seqno);
-        ck_assert(-EIO == group->nodes[1].vote_res);
+        /* Upstream expects the raw -EIO. Under PXC-4298 the vote is
+           recomputed from the Error_code: list in the text; neither
+           test text contains one, so the empty-list vote is expected. */
+        int64_t const expected_vote(
+            compute_vote(gu::GTID(group->group_uuid, 1000), -1, "", 0));
+        ck_assert(expected_vote == group->nodes[1].vote_res);
         ck_assert_msg(vote_log.find("initiates vote on ") != std::string::npos
                       && vote_log.find(": " + c.logged + '\n') !=
                       std::string::npos, "log: %s", vote_log.c_str());
