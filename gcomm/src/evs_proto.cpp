@@ -278,11 +278,6 @@ gcomm::evs::Proto::~Proto()
 
 
 bool
-<<<<<<< HEAD
-gcomm::evs::Proto::set_param(const std::string& key, const std::string& val,
-||||||| a8b6b4c3
-gcomm::evs::Proto::set_param(const std::string& key, const std::string& val, 
-=======
 gcomm::evs::Proto::sanitize_inactive_check_period(bool warn_on_adjust)
 {
     // Node liveness is inferred from the keepalives sent every
@@ -359,7 +354,6 @@ gcomm::evs::Proto::sanitize_install_timeout(bool warn_on_adjust)
 
 bool
 gcomm::evs::Proto::set_param(const std::string& key, const std::string& val,
->>>>>>> release_26.4.29
                             Protolay::sync_param_cb_t& sync_param_cb)
 {
     if (key == gcomm::Conf::EvsVersion)

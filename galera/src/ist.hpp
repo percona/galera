@@ -134,9 +134,6 @@ namespace galera
             int                   version_;
             bool                  use_ssl_;
             bool                  running_;
-#ifdef PXC
-            bool                  interrupted_;
-#endif /* PXC */
             bool                  ready_;
             bool                  interrupted_;
 

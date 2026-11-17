@@ -1211,8 +1211,9 @@ gcs_group_handle_vote_msg (gcs_group_t* group, const gcs_recv_msg_t* msg)
 
         if (code != 0)
         {
-            std::string err_msg(data, strlen(data));
-            code = recompute_vote_based_on_error_code(gtid, err_msg, code, true);
+            /* msg_str is the bounds-checked vote message text (MGL-337);
+               the raw buffer must not be read directly. */
+            code = recompute_vote_based_on_error_code(gtid, msg_str, code, true);
         }
 
         gcs_node_set_vote (&sender, gtid.seqno(), code,

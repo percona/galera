@@ -262,13 +262,6 @@ gcs_state_msg_read (const void* const buf, ssize_t const buf_len)
     CONST_STATE_MSG_FIELDS_V0(buf);
     assert(begin + off == name);
 
-<<<<<<< HEAD
-    int      appl_proto_ver = 0;
-    uint8_t* appl_ptr = reinterpret_cast<uint8_t*>(const_cast<char*>(inc_addr + strlen(inc_addr) + 1));
-||||||| a8b6b4c3
-    int      appl_proto_ver = 0;
-    uint8_t* appl_ptr = (uint8_t*)(inc_addr + strlen(inc_addr) + 1);
-=======
     /* true if the next n bytes are within the message */
     auto const fits([&off, len](size_t const n) { return off + n <= len; });
 
@@ -285,48 +278,23 @@ gcs_state_msg_read (const void* const buf, ssize_t const buf_len)
     off = inc_addr_end - begin + 1;
 
     int appl_proto_ver = 0;
->>>>>>> release_26.4.29
     if (*version >= 1) {
-<<<<<<< HEAD
-        assert(buf_len >= (uint8_t*)(appl_ptr + 1) - (const uint8_t*)buf);
-        appl_proto_ver = *appl_ptr;
-||||||| a8b6b4c3
-        assert(buf_len >= (uint8_t*)(appl_ptr + 1) - (uint8_t*)buf);
-        appl_proto_ver = *appl_ptr;
-=======
         if (!fits(1)) return NULL;
         appl_proto_ver = uint8_t(begin[off]);
->>>>>>> release_26.4.29
     }
     off += 1;
 // v3 stuff
     int64_t cached = GCS_SEQNO_ILL;
     if (*version >= 3) {
-<<<<<<< HEAD
-        assert(buf_len >= (uint8_t*)(cached_ptr + 1) - (const uint8_t*)buf);
-        gu::unserialize8(cached_ptr, 0, cached);
-||||||| a8b6b4c3
-        assert(buf_len >= (uint8_t*)(cached_ptr + 1) - (uint8_t*)buf);
-        gu::unserialize8(cached_ptr, 0, cached);
-=======
         if (!fits(8)) return NULL;
         gu::unserialize8(begin, off, cached);
->>>>>>> release_26.4.29
     }
     off += 8;
 // v4 stuff
     int32_t desync_count = 0;
     if (*version >= 4) {
-<<<<<<< HEAD
-        assert(buf_len >= (uint8_t*)(desync_count_ptr + 1) - (const uint8_t*)buf);
-        gu::unserialize4(desync_count_ptr, 0, desync_count);
-||||||| a8b6b4c3
-        assert(buf_len >= (uint8_t*)(desync_count_ptr + 1) - (uint8_t*)buf);
-        gu::unserialize4(desync_count_ptr, 0, desync_count);
-=======
         if (!fits(4)) return NULL;
         gu::unserialize4(begin, off, desync_count);
->>>>>>> release_26.4.29
     }
     off += 4;
 // v5 stuff, always present, used since gcs protocol 2
@@ -334,25 +302,6 @@ gcs_state_msg_read (const void* const buf, ssize_t const buf_len)
     int64_t vote_seqno   = 0;
     int64_t vote_res     = 0;
     uint8_t vote_policy  = GCS_VOTE_ZERO_WINS; // backward compatibility
-<<<<<<< HEAD
-    int64_t* last_applied_ptr = (int64_t*)(desync_count_ptr + 1);
-    if (*version >= 5 && *gcs_proto_ver >= 2) {
-        assert(buf_len > (uint8_t*)(last_applied_ptr + 3) - (const uint8_t*)buf);
-        gu::unserialize8(last_applied_ptr, 0, last_applied);
-
-        gu::unserialize8(last_applied_ptr + 1, 0, vote_seqno);
-        gu::unserialize8(last_applied_ptr + 2, 0, vote_res);
-        gu::unserialize1(last_applied_ptr + 3, 0, vote_policy);
-||||||| a8b6b4c3
-    int64_t* last_applied_ptr = (int64_t*)(desync_count_ptr + 1);
-    if (*version >= 5 && *gcs_proto_ver >= 2) {
-        assert(buf_len > (uint8_t*)(last_applied_ptr + 3) - (uint8_t*)buf);
-        gu::unserialize8(last_applied_ptr, 0, last_applied);
-
-        gu::unserialize8(last_applied_ptr + 1, 0, vote_seqno);
-        gu::unserialize8(last_applied_ptr + 2, 0, vote_res);
-        gu::unserialize1(last_applied_ptr + 3, 0, vote_policy);
-=======
     if (*version >= 5) {
         if (!fits(3 * 8 + 1)) return NULL;
         if (*gcs_proto_ver >= 2) {
@@ -361,7 +310,6 @@ gcs_state_msg_read (const void* const buf, ssize_t const buf_len)
             gu::unserialize8(begin, off + 16, vote_res);
             gu::unserialize1(begin, off + 24, vote_policy);
         }
->>>>>>> release_26.4.29
     }
     off += 3 * 8 + 1;
 // v6 stuff
@@ -369,22 +317,10 @@ gcs_state_msg_read (const void* const buf, ssize_t const buf_len)
     uint8_t prim_repl_ver = 0;
     uint8_t prim_appl_ver = 0;
     if (*version >= 6) {
-<<<<<<< HEAD
-        assert(buf_len >= (uint8_t*)(prim_appl_ptr + 1) - (const uint8_t*)buf);
-        prim_gcs_ver    = *prim_gcs_ptr;
-        prim_repl_ver   = *prim_repl_ptr;
-        prim_appl_ver   = *prim_appl_ptr;
-||||||| a8b6b4c3
-        assert(buf_len >= (uint8_t*)(prim_appl_ptr + 1) - (uint8_t*)buf);
-        prim_gcs_ver    = *prim_gcs_ptr;
-        prim_repl_ver   = *prim_repl_ptr;
-        prim_appl_ver   = *prim_appl_ptr;
-=======
         if (!fits(3)) return NULL;
         prim_gcs_ver  = begin[off];
         prim_repl_ver = begin[off + 1];
         prim_appl_ver = begin[off + 2];
->>>>>>> release_26.4.29
     }
 
     gcs_state_msg_t* ret = gcs_state_msg_create (
