@@ -710,7 +710,7 @@ static DummyNode* create_dummy_node_with_uuid(
     gu::ssl_register_params(gu_conf);
     gcomm::Conf::register_params(gu_conf);
     string conf = "evs://?" + Conf::EvsViewForgetTimeout + "=PT1H&"
-        + Conf::EvsInactiveCheckPeriod + "=" + to_string(Period(suspect_timeout)/3) + "&"
+        + Conf::EvsInactiveCheckPeriod + "=" + retrans_period + "&"
         + Conf::EvsSuspectTimeout + "=" + suspect_timeout + "&"
         + Conf::EvsInactiveTimeout + "=" + inactive_timeout + "&"
 
@@ -2604,6 +2604,144 @@ START_TEST(test_representative_incarnation_change)
 }
 END_TEST
 
+// Read back the effective value of a period parameter.
+static Period effective_period(const gu::Config& conf, const std::string& key)
+{
+    return Period(conf.get(key));
+}
+
+// evs.inactive_check_period must never exceed evs.keepalive_period.
+START_TEST(test_inactive_check_period_cap)
+{
+    log_info << "START test_inactive_check_period_cap";
+    const gcomm::UUID uuid(1);
+
+    // Default: the check period equals the keepalive period.
+    {
+        gu::Config conf;
+        gcomm::Conf::register_params(conf);
+        gcomm::evs::Proto evs(conf, uuid, 0);
+        ck_assert(effective_period(conf, Conf::EvsInactiveCheckPeriod) <=
+                  effective_period(conf, Conf::EvsKeepalivePeriod));
+    }
+
+    // A check period above the (default) keepalive period is capped.
+    {
+        gu::Config conf;
+        gcomm::Conf::register_params(conf);
+        gcomm::evs::Proto evs(conf, uuid, 0, gu::URI(
+            "evs://?" + Conf::EvsInactiveCheckPeriod + "=PT2S"));
+        ck_assert(effective_period(conf, Conf::EvsInactiveCheckPeriod) <=
+                  effective_period(conf, Conf::EvsKeepalivePeriod));
+    }
+
+    // Capped at the configured keepalive period regardless of the order in
+    // which the options are given.
+    {
+        gu::Config conf;
+        gcomm::Conf::register_params(conf);
+        gcomm::evs::Proto evs(conf, uuid, 0, gu::URI(
+            "evs://?" + Conf::EvsInactiveCheckPeriod + "=PT1S&"
+            + Conf::EvsKeepalivePeriod + "=PT0.2S"));
+        ck_assert(effective_period(conf, Conf::EvsInactiveCheckPeriod) ==
+                  Period("PT0.2S"));
+    }
+
+    // The default check period follows a lowered keepalive period.
+    {
+        gu::Config conf;
+        gcomm::Conf::register_params(conf);
+        gcomm::evs::Proto evs(conf, uuid, 0, gu::URI(
+            "evs://?" + Conf::EvsKeepalivePeriod + "=PT0.2S"));
+        ck_assert(effective_period(conf, Conf::EvsInactiveCheckPeriod) ==
+                  Period("PT0.2S"));
+    }
+
+    // A check period below the keepalive period is left alone.
+    {
+        gu::Config conf;
+        gcomm::Conf::register_params(conf);
+        gcomm::evs::Proto evs(conf, uuid, 0, gu::URI(
+            "evs://?" + Conf::EvsInactiveCheckPeriod + "=PT0.3S"));
+        ck_assert(effective_period(conf, Conf::EvsInactiveCheckPeriod) ==
+                  Period("PT0.3S"));
+    }
+}
+END_TEST
+
+// MDEV-38920: the EVS layer must not silently accept a misconfigured set
+// of timeouts. It has to clamp each offending value and warn, so that the
+// node still starts. The configuration below violates both orderings:
+//   install_timeout       (PT5S) < suspect_timeout  (PT16S)
+//   inactive_check_period (PT5S) > keepalive_period (PT1S)
+// Both values stay inside their own range checks, so it is the ordering
+// checks which have to catch them.
+START_TEST(test_mdev_38920_config_warn)
+{
+    log_info << "START test_mdev_38920_config_warn";
+    const gcomm::UUID uuid(1);
+
+    {
+        gu::Config conf;
+        gcomm::Conf::register_params(conf);
+        LogCapture lc;
+        lc.start();
+        {
+            gcomm::evs::Proto evs(conf, uuid, 0, gu::URI(
+                "evs://?" + Conf::EvsSuspectTimeout + "=PT16S&"
+                + Conf::EvsInactiveTimeout + "=PT32S&"
+                + Conf::EvsInstallTimeout + "=PT5S&"
+                + Conf::EvsKeepalivePeriod + "=PT1S&"
+                + Conf::EvsInactiveCheckPeriod + "=PT5S"));
+        }
+        // Stop before asserting: a failing assertion must not leave the
+        // log callback installed.
+        lc.stop();
+
+        // install_timeout is replaced with the midpoint of the suspect and
+        // inactive timeouts, inactive_check_period with the keepalive
+        // period.
+        ck_assert(effective_period(conf, Conf::EvsInstallTimeout) ==
+                  Period("PT24S"));
+        ck_assert(effective_period(conf, Conf::EvsInactiveCheckPeriod) ==
+                  Period("PT1S"));
+
+        // Neither value may be overridden silently.
+        ck_assert(lc.count("Ignoring configured " + Conf::EvsInstallTimeout
+                           + "=PT5S: it must be between "
+                           + Conf::EvsSuspectTimeout) == 1);
+        ck_assert(lc.count("Ignoring configured "
+                           + Conf::EvsInactiveCheckPeriod
+                           + "=PT5S: it must not exceed "
+                           + Conf::EvsKeepalivePeriod) == 1);
+    }
+
+    // A configuration which obeys the ordering is left alone and draws no
+    // warning.
+    {
+        gu::Config conf;
+        gcomm::Conf::register_params(conf);
+        LogCapture lc;
+        lc.start();
+        {
+            gcomm::evs::Proto evs(conf, uuid, 0, gu::URI(
+                "evs://?" + Conf::EvsSuspectTimeout + "=PT16S&"
+                + Conf::EvsInactiveTimeout + "=PT32S&"
+                + Conf::EvsInstallTimeout + "=PT20S&"
+                + Conf::EvsKeepalivePeriod + "=PT1S&"
+                + Conf::EvsInactiveCheckPeriod + "=PT1S"));
+        }
+        lc.stop();
+
+        ck_assert(effective_period(conf, Conf::EvsInstallTimeout) ==
+                  Period("PT20S"));
+        ck_assert(effective_period(conf, Conf::EvsInactiveCheckPeriod) ==
+                  Period("PT1S"));
+        ck_assert(lc.count("Ignoring configured") == 0);
+    }
+}
+END_TEST
+
 Suite* evs2_suite()
 {
     Suite* s = suite_create("gcomm::evs");
@@ -2789,6 +2927,14 @@ Suite* evs2_suite()
 
     tc = tcase_create("test_out_queue_limit");
     tcase_add_test(tc, test_out_queue_limit);
+    suite_add_tcase(s, tc);
+
+    tc = tcase_create("test_inactive_check_period_cap");
+    tcase_add_test(tc, test_inactive_check_period_cap);
+    suite_add_tcase(s, tc);
+
+    tc = tcase_create("test_mdev_38920_config_warn");
+    tcase_add_test(tc, test_mdev_38920_config_warn);
     suite_add_tcase(s, tc);
 
     tc = tcase_create("test_representative_incarnation_change");
