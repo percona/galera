@@ -6,11 +6,13 @@
 #include "gu_asio.hpp"
 #define GU_ASIO_IMPL
 #include "gu_asio_stream_engine.hpp"
+#include "gu_asio_socket_util.hpp" // set_fd_options()
 #include "gu_asio_test.hpp"
 #include "gu_buffer.hpp"
 #include "gu_compiler.hpp"
 
 #include <iterator>
+#include <fcntl.h>      // fcntl()
 #include <sys/socket.h> // recv(), send(), etc.
 
 //
@@ -369,6 +371,39 @@ START_TEST(test_tcp_socket)
 {
     gu::AsioIoService io_service;
     auto socket(io_service.make_socket(gu::URI("tcp://127.0.0.1:0")));
+}
+END_TEST
+
+// set_fd_options() runs from connect/accept completion handlers, which may
+// find the socket already closed. It must not throw there: a gu::Exception
+// escaping a completion handler propagates out of the gcomm event loop and
+// takes the whole backend down.
+START_TEST(test_set_fd_options_closed_socket)
+{
+    asio::io_context io_context;
+
+    // Never opened.
+    asio::ip::tcp::socket socket(io_context);
+    set_fd_options(socket);
+
+    // Opened, then closed again.
+    socket.open(asio::ip::tcp::v4());
+    socket.close();
+    set_fd_options(socket);
+
+    // Same for an acceptor, the other instantiation of the template.
+    asio::ip::tcp::acceptor acceptor(io_context);
+    set_fd_options(acceptor);
+    acceptor.open(asio::ip::tcp::v4());
+    acceptor.close();
+    set_fd_options(acceptor);
+
+    // An open socket must still get the flag set.
+    socket.open(asio::ip::tcp::v4());
+    set_fd_options(socket);
+    int flags(fcntl(native_socket_handle(socket), F_GETFD, 0));
+    ck_assert(flags != -1);
+    ck_assert(flags & FD_CLOEXEC);
 }
 END_TEST
 
@@ -2462,6 +2497,10 @@ Suite* gu_asio_suite()
 
     tc = tcase_create("test_tcp_socket");
     tcase_add_test(tc, test_tcp_socket);
+    suite_add_tcase(s, tc);
+
+    tc = tcase_create("test_set_fd_options_closed_socket");
+    tcase_add_test(tc, test_set_fd_options_closed_socket);
     suite_add_tcase(s, tc);
 
     tc = tcase_create("test_tcp_socket_receive_buffer_size_unopened");

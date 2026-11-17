@@ -141,10 +141,8 @@ galera::ist::Receiver::Receiver(gu::Config&           conf,
     version_      (-1),
     use_ssl_      (false),
     running_      (false),
-#ifdef PXC
-    interrupted_  (false),
-#endif /* PXC */
-    ready_        (false)
+    ready_        (false),
+    interrupted_  (false)
 {
     /* check if receive address is explicitly set in config */
     try {
@@ -286,6 +284,7 @@ galera::ist::Receiver::prepare(wsrep_seqno_t const first_seqno,
                                const wsrep_uuid_t& source_id)
 {
     ready_ = false;
+    interrupted_ = false;
     version_ = version;
     source_id_ = source_id;
 
@@ -456,17 +455,21 @@ class SocketWatchdog
 
 void galera::ist::Receiver::run()
 {
-    auto socket(acceptor_->accept());
-    acceptor_->close();
-
     /* shall be initialized below, when we know at what seqno preload starts */
     gu::Progress<wsrep_seqno_t>* progress(NULL);
 
     int ec(0);
     std::ostringstream error_os;
+    std::shared_ptr<gu::AsioSocket> socket;
 
     try
     {
+        // Inside the try: AsioAcceptorReact::accept() can throw gu::Exception
+        // on an allowlist rejection, and run_receiver_thread() has no catch
+        // of its own, so it must be caught below, not escape run().
+        socket = acceptor_->accept();
+        acceptor_->close();
+
         bool const keep_keys(conf_.get(CONF_KEEP_KEYS, CONF_KEEP_KEYS_DEFAULT));
         Proto p(gcache_, version_, keep_keys);
 
@@ -477,21 +480,16 @@ void galera::ist::Receiver::run()
         // wait for SST to complete so that we know what is the first_seqno_
         {
             gu::Lock lock(mutex_);
-#ifdef PXC
-            /* If SST is yet to complete and IST has not been interrupted wait
-            for SST to complete. */
-            while (ready_ == false && interrupted_ == false)
-                lock.wait(cond_);
-
-            /* If SST fails then on signal to resume IST skip IST given SST
-            failure. */
-            if (interrupted_ == true) {
-              log_error << "###### IST was interrupted";
-              goto err;
+            while (ready_ == false && interrupted_ == false) { lock.wait(cond_); }
+            if (ready_ == false)
+            {
+                // finished() was called (e.g. server shutdown) before SST
+                // completed: there will be no first_seqno_ to apply from.
+                log_info << "IST receiver interrupted while waiting for "
+                            "SST to complete";
+                ec = EINTR;
+                goto err;
             }
-#else
-            while (ready_ == false) { lock.wait(cond_); }
-#endif /* PXC */
         }
         log_info << "####### IST applying starts with " << first_seqno_; //remove
         assert(first_seqno_ > 0);
@@ -727,9 +725,12 @@ void galera::ist::Receiver::run()
     }
 
 err:
+    // Idempotent; covers accept() throwing, else finished()/interrupt()
+    // reconnects to a still-listening acceptor and blocks forever.
+    acceptor_->close();
     delete progress;
     gu::Lock lock(mutex_);
-    socket->close();
+    if (socket) socket->close();
 
     running_ = false;
     if (last_seqno_ > 0 && ec != EINTR && current_seqno_ < last_seqno_ &&
@@ -759,6 +760,14 @@ void galera::ist::Receiver::ready(wsrep_seqno_t const first)
 }
 
 
+void galera::ist::Receiver::cancel_wait()
+{
+    gu::Lock lock(mutex_);
+    interrupted_ = true;
+    cond_.signal();
+}
+
+
 wsrep_seqno_t galera::ist::Receiver::finished()
 {
     if (recv_addr_ == "")
@@ -767,22 +776,12 @@ wsrep_seqno_t galera::ist::Receiver::finished()
     }
     else
     {
+        // Wake up a receiver thread that is still waiting for SST to
+        // complete (ready() was never called): the socket-based
+        // interrupt() below only reaches a receiver that has already
+        // started reading the IST stream.
+        cancel_wait();
         interrupt();
-
-#ifdef PXC
-        // If ready_ = false then it suggest SST action was not completed
-        // but flow decided to interrupt or terminate running IST.
-        // Make sure to signal cond variable to unblock reciever thread
-        // that is waiting on the signal.
-        // This scenario normally will be seen incase of SST (or other initial
-        // boot up failure).
-        if (!ready_)
-        {
-            gu::Lock local_lock(mutex_);
-            interrupted_ = true;
-            cond_.signal();
-        }
-#endif /* PXC */
 
         int err;
         if ((err = gu_thread_join(thread_, 0)) != 0)
