@@ -730,6 +730,10 @@ static void test_ist_common(int const version)
 
 static void test_ist_interrupted_before_ready(int const version)
 {
+    // Initialize utils. Ring buffer needs CRC.
+    // It is done by replicator constructor, but we use GCache directly here.
+    gu_init(nullptr, nullptr);
+
     TrxHandleMaster::Pool lp(TrxHandleMaster::LOCAL_STORAGE_SIZE(), 4,
                              "ist_interrupted");
     TrxHandleSlave::Pool sp(sizeof(TrxHandleSlave), 4, "ist_interrupted");
@@ -858,6 +862,10 @@ namespace
 // reported through ist_end().
 static void test_ist_allowlist_rejected(int const version)
 {
+    // Initialize utils. Ring buffer needs CRC.
+    // It is done by replicator constructor, but we use GCache directly here.
+    gu_init(nullptr, nullptr);
+
     TrxHandleMaster::Pool lp(TrxHandleMaster::LOCAL_STORAGE_SIZE(), 4,
                              "ist_allowlist_rejected");
     TrxHandleSlave::Pool sp(sizeof(TrxHandleSlave), 4,
