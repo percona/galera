@@ -46,6 +46,33 @@ private:
     gcache::GCache&    gcache_;
 };
 
+#ifdef PXC
+// PXC-4752: exception-safe way to tell GCS that a write set it handed out has
+// been processed, so that GCS stops counting it in the receive queue length it
+// reports as wsrep_local_recv_queue. Must fire on every exit path of
+// GcsActionSource::process(), including the corrupt()/skip path and the
+// exception path, otherwise the reported queue length drifts upwards for good.
+class ActionProcessed
+{
+public:
+    ActionProcessed(galera::GCS_IMPL& gcs, bool armed)
+        : gcs_(gcs), armed_(armed)
+    { }
+
+    ~ActionProcessed()
+    {
+        if (armed_) gcs_.action_processed();
+    }
+
+private:
+    ActionProcessed(const ActionProcessed&);
+    ActionProcessed& operator=(const ActionProcessed&);
+
+    galera::GCS_IMPL& gcs_;
+    bool              armed_;
+};
+#endif /* PXC */
+
 void
 galera::GcsActionSource::process_writeset(void* const              recv_ctx,
                                           const struct gcs_action& act,
@@ -160,6 +187,18 @@ ssize_t galera::GcsActionSource::process(void* recv_ctx, bool& exit_loop)
     struct gcs_action act;
 
     ssize_t rc(gcs_.recv(act));
+
+#ifdef PXC
+    /* PXC-4752: release the write set back to GCS once it has been processed,
+     * whichever way this function returns. Armed on exactly the condition
+     * gcs_recv() uses to count an action as in flight: it handed out an action
+     * (rc > 0) and that action is a write set. A write set whose work is
+     * handed to another thread (NBO DDL) stops being counted when this
+     * function returns, before that work has finished. */
+    ActionProcessed const action_processed(gcs_,
+                                           rc > 0 &&
+                                           GCS_ACT_WRITESET == act.type);
+#endif /* PXC */
 
     /* Potentially we want to do corrupt() check inside commit_monitor_ as well
      * but by the time inconsistency is detected an arbitrary number of

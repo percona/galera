@@ -168,6 +168,33 @@ struct gcs_conn
     ssize_t      recv_q_size;
     gu_thread_t  recv_thread;
 
+#ifdef PXC
+    /* PXC-4752: write sets handed out by gcs_recv() whose processing has not
+     * completed yet. They have left recv_q, but they are still waiting to be
+     * applied, so they must be part of the receive queue length reported to
+     * the application (wsrep_local_recv_queue and friends).
+     *
+     * The effective receive queue length is
+     *     gu_fifo_length(recv_q) + recv_q_inflight
+     * It grows only in GCS_FIFO_PUSH_TAIL(); it shrinks in
+     * gcs_action_processed() and, for action types that are not counted as
+     * in flight, when gcs_recv() pops them. Handing a write set out does not
+     * change it: the action just moves from the FIFO to recv_q_inflight.
+     *
+     * ALL of the fields below are guarded by the recv_q lock, which every
+     * accessor already holds or takes. Keeping the whole accounting under one
+     * lock is what makes the watermarks exact and race-free; it costs one
+     * extra lock/unlock of the recv_q mutex per applied write set. That mutex
+     * is shared with the GCS receive thread and the other appliers, but the
+     * critical section is a few arithmetic operations on a path that has just
+     * committed a transaction to the storage engine. */
+    long      recv_q_inflight;
+    long      recv_q_eff_max;      /* effective length watermarks,     */
+    long      recv_q_eff_min;      /* reset by gcs_flush_stats()       */
+    long long recv_q_eff_sum;
+    long long recv_q_eff_samples;
+#endif /* PXC */
+
     /* Message receiving timeout - absolute date in nanoseconds */
     long long    timeout;
 
@@ -341,6 +368,13 @@ gcs_conn::gcs_conn(gu::Config& conf,
     recv_q(),
     recv_q_size(),
     recv_thread(),
+#ifdef PXC
+    recv_q_inflight(0),
+    recv_q_eff_max(0),
+    recv_q_eff_min(0),
+    recv_q_eff_sum(0),
+    recv_q_eff_samples(0),
+#endif /* PXC */
     timeout(),
     fc_lock(),
     stfc(),
@@ -1511,12 +1545,69 @@ gcs_handle_actions (gcs_conn_t* conn, struct gcs_act_rcvd& rcvd)
     return ret;
 }
 
+#ifdef PXC
+/*! PXC-4752: current effective receive queue length - actions still in the
+ *  FIFO plus write sets already handed to an applier but not yet processed.
+ *  The recv_q lock must be held: gu_fifo_length() is an unprotected accessor
+ *  and recv_q_inflight is a plain counter. */
+static inline long
+_recv_q_eff_len (gcs_conn_t* conn)
+{
+    assert (gu_fifo_locked(conn->recv_q));
+    return gu_fifo_length(conn->recv_q) + conn->recv_q_inflight;
+}
+
+/*! PXC-4752: lower the effective length watermark. Must be called with the
+ *  recv_q lock held, from the places where the effective length shrinks in
+ *  normal operation: gcs_recv() and gcs_action_processed(). The bulk drops of
+ *  the FIFO on inconsistency (gu_fifo_clear()) and on the arbitrator shutdown
+ *  drain do not call it; that is harmless, because _get_recv_q_stats() clamps
+ *  the reported minimum to the current length. */
+static inline void
+_recv_q_eff_min_update (gcs_conn_t* conn, long eff_len)
+{
+    assert (gu_fifo_locked(conn->recv_q));
+    if (gu_unlikely(eff_len < conn->recv_q_eff_min))
+        conn->recv_q_eff_min = eff_len;
+}
+
+/*! PXC-4752: only write sets are accounted as in flight. Other action types
+ *  are consumed by handlers that may legitimately block for a very long time
+ *  (a GCS_ACT_CCHANGE drives request_state_transfer(), which waits for the
+ *  whole state transfer), and wsrep_local_recv_queue is documented as the
+ *  number of *write sets* waiting to be applied. */
+static inline bool
+_recv_q_is_inflight_action (const struct gcs_action* action)
+{
+    return action->size > 0 && GCS_ACT_WRITESET == action->type;
+}
+#endif /* PXC */
+
 static inline void
 GCS_FIFO_PUSH_TAIL (gcs_conn_t* conn, ssize_t size)
 {
     if (conn->progress_) conn->progress_->update_total(1);
 
     conn->recv_q_size += size;
+
+#ifdef PXC
+    /* PXC-4752: sample the effective receive queue length - FIFO occupancy
+     * plus the actions still in flight in the appliers. The recv_q lock is
+     * still held here (gu_fifo_push_tail() below releases it) and this is the
+     * only place where the effective length grows, so recv_q_eff_max is an
+     * exact high watermark. The sampling convention mirrors gu_fifo_push_tail()
+     * exactly: the average samples the length as seen *before* this push, the
+     * maximum is taken *after* it. */
+    {
+        long const len_before (_recv_q_eff_len(conn));
+        conn->recv_q_eff_sum += len_before;
+        conn->recv_q_eff_samples++;
+
+        if (gu_unlikely(len_before + 1 > conn->recv_q_eff_max))
+            conn->recv_q_eff_max = len_before + 1;
+    }
+#endif /* PXC */
+
     gu_fifo_push_tail(conn->recv_q);
 }
 
@@ -2464,6 +2555,26 @@ long gcs_recv (gcs_conn_t*        conn,
             }
         }
 
+#ifdef PXC
+        /* PXC-4752: a write set leaves recv_q here but is not applied yet -
+         * move it from the FIFO to the in-flight counter so that it keeps
+         * being reported by wsrep_local_recv_queue. Done here rather than in
+         * GCS_FIFO_POP_HEAD() because the GCS_FOR_GARB shutdown drain pops
+         * without a consumer that would ever release the action.
+         * _recv_q_is_inflight_action() also requires size > 0, which is what
+         * this function returns to signal "an action was received" - so the
+         * caller arms its gcs_action_processed() on the very same condition.
+         * Still under the recv_q lock, so the FIFO -> in-flight hand-off is
+         * atomic for every observer. */
+        if (_recv_q_is_inflight_action(action)) conn->recv_q_inflight++;
+
+        /* The action is about to leave the FIFO. For a write set that is a
+         * no-op for the effective length (it just moved to recv_q_inflight);
+         * for any other action type the effective length drops by one. */
+        _recv_q_eff_min_update (conn, gu_fifo_length(conn->recv_q) - 1 +
+                                      conn->recv_q_inflight);
+#endif /* PXC */
+
         GCS_FIFO_POP_HEAD (conn, action->size); // release the queue
 
         if (gu_unlikely(send_cont) && (err = gcs_fc_cont_end(conn))) {
@@ -2774,14 +2885,64 @@ gcs_seqno_t gcs_local_sequence(gcs_conn_t* conn)
     return gu_atomic_fetch_and_add(&conn->local_act_id, 1);
 }
 
+#ifdef PXC
+void
+gcs_action_processed (gcs_conn_t* conn)
+{
+    gu_fifo_lock (conn->recv_q);
+    {
+        assert (conn->recv_q_inflight > 0);
+
+        if (gu_likely(conn->recv_q_inflight > 0)) conn->recv_q_inflight--;
+
+        _recv_q_eff_min_update (conn, _recv_q_eff_len(conn));
+    }
+    gu_fifo_release (conn->recv_q);
+}
+
+/*! Fills in the receive queue statistics, accounting for the write sets that
+ *  are in flight in the appliers (PXC-4752). */
+static void
+_get_recv_q_stats (gcs_conn_t* conn, struct gcs_stats* stats)
+{
+    long      eff_len, eff_max, eff_min;
+    long long sum, samples;
+
+    gu_fifo_lock (conn->recv_q);
+    {
+        eff_len = _recv_q_eff_len (conn);
+        eff_max = conn->recv_q_eff_max;
+        eff_min = conn->recv_q_eff_min;
+        sum     = conn->recv_q_eff_sum;
+        samples = conn->recv_q_eff_samples;
+    }
+    gu_fifo_release (conn->recv_q);
+
+    /* The accounting is balanced by construction, but this value is a user
+     * facing status variable and the exactly-once contract of
+     * gcs_action_processed() is spread over two components - never let a
+     * hypothetical imbalance surface as a negative queue length. */
+    if (gu_unlikely(eff_len < 0)) eff_len = 0;
+
+    stats->recv_q_len     = int(eff_len);
+    stats->recv_q_len_max = int(std::max (eff_max, eff_len));
+    stats->recv_q_len_min = int(std::max (0L, std::min (eff_min, eff_len)));
+    stats->recv_q_len_avg = samples > 0 ? double(sum) / double(samples) : 0.0;
+}
+#endif /* PXC */
+
 void
 gcs_get_stats (gcs_conn_t* conn, struct gcs_stats* stats)
 {
+#ifdef PXC
+    _get_recv_q_stats (conn, stats);
+#else
     gu_fifo_stats_get (conn->recv_q,
                        &stats->recv_q_len,
                        &stats->recv_q_len_max,
                        &stats->recv_q_len_min,
                        &stats->recv_q_len_avg);
+#endif /* PXC */
 
     stats->recv_q_size = conn->recv_q_size;
 
@@ -2815,6 +2976,22 @@ void
 gcs_flush_stats(gcs_conn_t* conn)
 {
     gu_fifo_stats_flush(conn->recv_q);
+
+#ifdef PXC
+    /* PXC-4752: reset the effective queue watermarks the same way
+     * gu_fifo_stats_flush() resets the FIFO's own ones. */
+    gu_fifo_lock (conn->recv_q);
+    {
+        long const eff_len (_recv_q_eff_len(conn));
+
+        conn->recv_q_eff_max     = eff_len;
+        conn->recv_q_eff_min     = eff_len;
+        conn->recv_q_eff_sum     = 0;
+        conn->recv_q_eff_samples = 0;
+    }
+    gu_fifo_release (conn->recv_q);
+#endif /* PXC */
+
     gcs_sm_stats_flush (conn->sm);
     conn->stats_fc_stop_sent = 0;
     conn->stats_fc_cont_sent = 0;

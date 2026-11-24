@@ -270,6 +270,29 @@ static inline long gcs_repl (gcs_conn_t*        const conn,
 extern long gcs_recv (gcs_conn_t*        conn,
                       struct gcs_action* action);
 
+#ifdef PXC
+/*!
+ * @brief Tells GCS that a write set returned by a gcs_recv() call has been
+ *        fully processed by the caller.
+ *
+ * A write set that gcs_recv() has handed out has left the receive queue but is
+ * still waiting to be applied, so GCS keeps counting it in the receive queue
+ * length it reports through gcs_get_stats() (wsrep_local_recv_queue and
+ * friends). Without this call that count would drift upwards for good.
+ *
+ * Must be called exactly once for every gcs_recv() call that returned a write
+ * set - that is, returned > 0 with action type GCS_ACT_WRITESET - and not at
+ * all for any other call. Other action types are deliberately not accounted:
+ * their handlers may block for a very long time (a GCS_ACT_CCHANGE drives
+ * request_state_transfer(), which waits for the whole state transfer), and
+ * wsrep_local_recv_queue is documented as the number of *write sets* waiting
+ * to be applied. (PXC-4752)
+ *
+ * @param conn   group connection handle
+ */
+extern void gcs_action_processed (gcs_conn_t* conn);
+#endif /* PXC */
+
 /*!
  * @brief Schedules entry to CGS send monitor.
  * Locks send monitor and should be quickly followed by gcs_repl()/gcs_send()

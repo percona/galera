@@ -529,6 +529,12 @@ void *gcs_test_recv (void *arg)
         case GCS_ACT_WRITESET:
             test_after_recv (thread);
             //puts (thread->log_msg); fflush (stdout);
+#ifdef PXC
+            /* PXC-4752: write sets are counted as in flight by gcs_recv()
+             * until released, so release here or the queue length reported by
+             * gcs_get_stats() grows without bound. */
+            gcs_action_processed (gcs);
+#endif /* PXC */
             break;
         case GCS_ACT_COMMIT_CUT:
             group_seqno = *(const gcs_seqno_t*)thread->act.buf;
