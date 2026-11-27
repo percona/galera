@@ -113,6 +113,7 @@ static const char* Defaults[] =
     "protonet.version",            "0",
     "repl.causal_read_timeout",    "PT30S",
     "repl.commit_order",           "3",
+    "repl.force_sst_after_inconsistency", "no",
     "repl.key_format",             "FLAT8",
     "repl.max_ws_size",            "2147483647",
     "repl.proto_max",              "11",
